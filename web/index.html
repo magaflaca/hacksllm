@@ -77,6 +77,8 @@
           <button class="primary px" type="button" data-action="work-new"><span data-icon="plus"></span>nueva sesion</button>
           <p class="label">sesiones</p>
           <ul class="chat-list" id="work-sessions"></ul>
+          <p class="label" id="work-pages-label" hidden>bichi paginas</p>
+          <ul class="chat-list page-list" id="work-pages" hidden></ul>
           <p class="label">archivos</p>
           <ul class="chat-list file-list" id="work-files"></ul>
           <button class="ghost px" type="button" data-action="work-zip" disabled><span data-icon="download"></span>todo en .zip</button>
@@ -92,6 +94,7 @@
             <div class="composer-bar">
               <input type="file" id="work-file" multiple hidden />
               <button class="icon-btn px attach" type="button" aria-label="Subir archivos" title="Subir archivos" data-icon="upload" data-action="work-attach"></button>
+              <button class="icon-btn px publish" type="button" aria-pressed="false" aria-label="Publicar como bichi pagina" title="Publicar como bichi pagina" data-icon="globe" data-action="work-publish"></button>
               <label class="model px">
                 <span class="sr-only">esfuerzo</span>
                 <select id="work-effort"></select>

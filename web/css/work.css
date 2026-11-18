@@ -268,3 +268,92 @@
   --line: var(--sky-deep);
   background: var(--surface-2);
 }
+
+/* bichi paginas */
+
+.publish[aria-pressed='true'] {
+  background: var(--mint);
+  color: var(--on-accent);
+}
+
+.page-list {
+  flex: none !important;
+  min-height: 0 !important;
+  max-height: 120px;
+}
+
+.page-open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.page-open .icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--sky-deep);
+}
+
+.page-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--mint);
+  color: var(--on-accent);
+  max-width: 100%;
+}
+
+.page-card > .icon {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  animation: twinkle 2.4s steps(4) infinite;
+}
+
+.page-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.page-kicker {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.page-link {
+  font-weight: 700;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+.page-copy {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 8px;
+  flex: none;
+  color: inherit;
+}
+
+.page-copy:hover {
+  background: rgb(255 255 255 / 0.35);
+}
+
+.msg-note {
+  font-size: 14px;
+  padding: 8px 12px;
+  background: var(--butter);
+  color: var(--on-accent);
+}

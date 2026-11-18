@@ -1,0 +1,10 @@
+name = "bichi-paginas"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+workers_dev = false
+
+routes = [{ pattern = "bichi.hacks.win", custom_domain = true }]
+
+[[kv_namespaces]]
+binding = "PAGES"
+id = "325d9d4b10fa448e9d151e00b2a2b53b"

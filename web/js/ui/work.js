@@ -1,4 +1,4 @@
-import { h } from '../core/dom.js';
+import { h, copyText } from '../core/dom.js';
 import { icon } from '../art/pixels.js';
 import { sound } from '../core/sound.js';
 import { store } from '../core/store.js';
@@ -45,12 +45,21 @@ export function createWork({ root, mascot, openKey }) {
   const picker = root.querySelector('#work-file');
   const tray = root.querySelector('#work-attachments');
   const zipButton = root.querySelector('[data-action="work-zip"]');
+  const publishButton = root.querySelector('[data-action="work-publish"]');
+  const pageList = root.querySelector('#work-pages');
+  const pageLabel = root.querySelector('#work-pages-label');
 
   const blank = () => sessions.create({ remote: null });
   let current = sessions.all()[0] ?? blank();
   let pending = [];
   let controller = null;
+  let publishing = false;
   const alive = new Set();
+
+  const setPublishing = (on) => {
+    publishing = on;
+    publishButton.setAttribute('aria-pressed', on);
+  };
 
   const stored = () => Boolean(sessions.find(current.id));
   const persist = () => stored() && sessions.touch(current);
@@ -157,6 +166,38 @@ export function createWork({ root, mascot, openKey }) {
     if (!items.length) sessionList.append(h('li.chat-empty', {}, 'aun no hay sesiones'));
   }
 
+  function renderPages() {
+    const list = current.pages ?? [];
+    pageList.hidden = pageLabel.hidden = !list.length;
+    pageList.replaceChildren(
+      ...list.map((page) =>
+        h(
+          'li.chat-item',
+          {},
+          h('a.chat-open.page-open', { href: page.url, target: '_blank', rel: 'noopener', title: page.url }, icon('globe'), h('span', {}, page.slug)),
+          h('button.chat-remove', { type: 'button', 'aria-label': `Despublicar ${page.slug}`, title: 'Despublicar', onclick: () => unpublish(page.slug) }, icon('trash')),
+        ),
+      ),
+    );
+  }
+
+  async function unpublish(slug) {
+    if (!(await work.unpublish(slug).catch(() => false))) {
+      mascot.say('no pude quitarla', 2200);
+      return sound.play('error');
+    }
+    current.pages = (current.pages ?? []).filter((page) => page.slug !== slug);
+    persist();
+    renderPages();
+    mascot.say('pagina quitada', 1800);
+    sound.play('remove');
+  }
+
+  function rememberPage(session, page) {
+    session.pages = [{ slug: page.slug, url: page.url }, ...(session.pages ?? []).filter((item) => item.slug !== page.slug)];
+    if (session === current) renderPages();
+  }
+
   async function refreshFiles() {
     const session = current;
     const files = (await remoteFiles()) ?? (await vault.list(session.id)).map(({ path, size }) => ({ path, size }));
@@ -181,6 +222,7 @@ export function createWork({ root, mascot, openKey }) {
     renderTray();
     renderThread();
     renderSessions();
+    renderPages();
     refreshFiles();
     root.dispatchEvent(new CustomEvent('chat:opened'));
   }
@@ -319,6 +361,28 @@ export function createWork({ root, mascot, openKey }) {
       icon('download'),
     );
 
+  function pageCard(page) {
+    const copy = h('button.page-copy', { type: 'button', 'aria-label': 'Copiar enlace', title: 'Copiar enlace' }, icon('copy'));
+    copy.addEventListener('click', async () => {
+      await copyText(page.url);
+      sound.play('copy');
+      copy.replaceChildren(icon('check'));
+      setTimeout(() => copy.replaceChildren(icon('copy')), 1400);
+    });
+    return h(
+      'div.page-card.px',
+      {},
+      icon('globe'),
+      h(
+        'div.page-text',
+        {},
+        h('span.page-kicker', {}, page.updated ? 'bichi pagina actualizada' : 'bichi pagina publicada'),
+        h('a.page-link', { href: page.url, target: '_blank', rel: 'noopener' }, page.url.replace(/^https:\/\//, '')),
+      ),
+      copy,
+    );
+  }
+
   function deliverables(files) {
     if (!files?.length) return null;
     const zip = files.length > 1 && h('button.file-card.is-zip.px', { type: 'button', onclick: () => save() }, icon('download'), h('span.file-name', {}, 'todo el espacio en .zip'));
@@ -335,6 +399,8 @@ export function createWork({ root, mascot, openKey }) {
     const parts = [stepsBlock(message.steps, live, message.status)];
     if (message.content) parts.push(...markdown(tidy(message.content)));
     else if (live) parts.push(h('span.typing', {}, h('i'), h('i'), h('i')));
+    if (message.page) parts.push(pageCard(message.page));
+    if (message.notice) parts.push(h('p.msg-note.px', {}, message.notice));
     parts.push(deliverables(message.files));
     if (message.error) parts.push(h('p.msg-error.px', {}, message.error));
     node.querySelector('.msg-body').replaceChildren(...parts.filter(Boolean));
@@ -377,7 +443,7 @@ export function createWork({ root, mascot, openKey }) {
       .slice(-CONTEXT_TURNS)
       .map(({ role, content }) => ({ role, text: content.slice(0, 2000) }));
 
-  async function answer(message, uploads) {
+  async function answer(message, uploads, publish) {
     const session = current;
     const reply = { role: 'assistant', content: '', steps: [], files: [], status: '' };
     const node = botNode(reply, true);
@@ -389,7 +455,7 @@ export function createWork({ root, mascot, openKey }) {
     let frame = 0;
     const repaint = () => (frame ||= requestAnimationFrame(() => ((frame = 0), paint(node, reply, true), scrollDown())));
     try {
-      const body = { message, effort: effort.value, uploads, context: context() };
+      const body = { message, effort: effort.value, uploads, context: context(), publish, page: session.pages?.[0]?.slug };
       for await (const event of work.run(session.remote, body, controller.signal)) {
         if (event.type === 'status') reply.status = event.text;
         else if (event.type === 'text') reply.content += event.delta;
@@ -400,12 +466,18 @@ export function createWork({ root, mascot, openKey }) {
           else if (reply.steps.length < MAX_STEPS) reply.steps.push(step), sound.play('tap');
         } else if (event.type === 'files') reply.files = event.files.map(({ path, size }) => ({ path, size }));
         else if (event.type === 'done') reply.content = event.text || reply.content;
+        else if (event.type === 'notice') reply.notice = event.message;
+        else if (event.type === 'page') {
+          reply.page = { slug: event.slug, url: event.url, updated: event.updated };
+          rememberPage(session, event);
+          sound.play('chirp');
+        }
         else if (event.type === 'error') reply.error = event.message;
         repaint();
       }
       if (reply.error) throw new Error(reply.error);
       mascot.setMood('happy', 1800);
-      mascot.say(reply.files.length ? 'aqui tienes' : 'listo', 1800);
+      mascot.say(reply.page ? 'ya esta en linea' : reply.files.length ? 'aqui tienes' : 'listo', 1800);
       sound.play('done');
     } catch (error) {
       if (error.name === 'AbortError') mascot.setMood('idle');
@@ -454,7 +526,9 @@ export function createWork({ root, mascot, openKey }) {
     prompt.value = '';
     resize();
     sound.play('send');
-    answer(content, uploads);
+    const publish = publishing;
+    setPublishing(false);
+    answer(content, uploads, publish);
   }
 
   effort.replaceChildren(...EFFORTS.map(([value, label]) => h('option', { value, selected: value === store.get('workEffort', 'medium') }, label)));
@@ -468,6 +542,12 @@ export function createWork({ root, mascot, openKey }) {
   root.querySelector('[data-action="work-attach"]').addEventListener('click', () => (work.hasKey() ? picker.click() : locked()));
   root.querySelector('[data-action="work-new"]').addEventListener('click', startNew);
   zipButton.addEventListener('click', () => save());
+  publishButton.addEventListener('click', () => {
+    if (!work.hasKey()) return locked();
+    setPublishing(!publishing);
+    sound.play(publishing ? 'on' : 'off');
+    if (publishing) mascot.say('lo publico como bichi pagina', 2200);
+  });
   root.addEventListener('dragover', (event) => (event.preventDefault(), root.classList.add('is-dropping')));
   root.addEventListener('dragleave', (event) => event.target === root && root.classList.remove('is-dropping'));
   root.addEventListener('drop', (event) => {
@@ -477,7 +557,7 @@ export function createWork({ root, mascot, openKey }) {
   });
   sessions.onChange(renderSessions);
 
-  const refresh = () => (renderThread(), renderSessions(), refreshFiles());
+  const refresh = () => (renderThread(), renderSessions(), renderPages(), refreshFiles());
   renderTray();
   refresh();
   return { refresh };

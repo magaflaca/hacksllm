@@ -78,6 +78,25 @@ web (#/work) -> Pages /work/* -> nginx /work/ -> hacksllm-work :20130 (usuario h
 - El agente necesita la sesion de Google de agy, asi que quien tenga una clave podria leerla desde su espacio:
   reparte claves solo a gente de confianza.
 
+### bichi paginas
+
+bichi work puede publicar webs estaticas en `https://bichi.hacks.win/<nombre>` para compartirlas: con el boton del
+globo en el compositor (publica en ese turno) o pidiendolo en el mensaje. El agente deja el sitio en `pagina/` y su
+nombre en `pagina/.publicar`; al terminar el turno el servidor lo sube a Workers KV y la web muestra el enlace.
+
+```
+bichi.hacks.win/<nombre>/...  ->  worker bichi/ (Cloudflare)  ->  KV bichi-pages      (el VPS no sirve nada)
+bichi work, al publicar       ->  API de KV con un token que solo puede leer y escribir KV
+```
+
+- Solo archivos estaticos (html, css, js, imagenes, fuentes, medios): hasta 300 archivos, 10 MB por archivo y
+  25 MB por pagina. Cada pagina es de la clave que la publico; volver a publicar con el mismo nombre la actualiza.
+- Quien es dueno de cada nombre lo guarda `/opt/hacksllm/data/bichi-pages.json`; KV es solo para servir.
+- Las paginas publicadas de una sesion salen en la barra lateral, con su boton para despublicar.
+- El plan gratis de KV admite 1000 escrituras al dia (una por archivo publicado) y 100k lecturas, con cache de 60 s.
+- Configuracion: `BICHI_ACCOUNT`, `BICHI_KV` y `BICHI_TOKEN` en `/opt/hacksllm/env` (el token se crea en Cloudflare
+  con permisos Workers KV Storage Read y Write). El worker se despliega con `npm run deploy:bichi`.
+
 ## Usarlo desde tu PC
 
 ```bash
@@ -129,7 +148,8 @@ deploy/
   bichi-run            lanza el agente en el sandbox (root, via sudo)
 functions/             puentes same-origin de Pages: v1 (gateway) y work (agente)
 lib/origin.js          reenvio comun de esos puentes
-work/                  API de bichi work: sesiones, cola y motores
+work/                  API de bichi work: sesiones, cola, motores y bichi paginas
+bichi/                 worker de bichi.hacks.win que sirve las paginas desde KV
 scripts/               build de la web y servidor de desarrollo
 web/
   js/art/              sprites pixel a pixel: bichi, iconos, cursores, estanque
@@ -145,6 +165,7 @@ npm install
 npm run dev                         # http://localhost:8800, /v1 va a produccion
 DEV_KEY=sk-... npm run dev          # con clave para el chat local
 npm run deploy:web                  # build y despliegue en Cloudflare Pages
+npm run deploy:bichi                # worker de bichi paginas
 ```
 
 ## Servidor

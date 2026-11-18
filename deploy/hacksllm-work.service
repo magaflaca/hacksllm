@@ -8,6 +8,7 @@ User=hacksllm
 Group=hacksllm
 WorkingDirectory=/opt/hacksllm/work
 ExecStart=/opt/hacksllm/runtime/bin/node server.mjs
+EnvironmentFile=/opt/hacksllm/env
 Environment=NODE_ENV=production
 Environment=WORK_PORT=20130
 Environment=WORK_CONCURRENCY=1

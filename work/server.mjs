@@ -1,12 +1,13 @@
 // API de bichi work, detras de nginx en /work/. Solo con una clave valida de OmniRoute.
 import http from 'node:http';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { ENGINES, available, rest, runEngine } from './engines.mjs';
 import * as sessions from './sessions.mjs';
+import * as pages from './pages.mjs';
 
 const PORT = Number(process.env.WORK_PORT ?? 20130);
 const GATEWAY = process.env.WORK_GATEWAY ?? 'http://127.0.0.1:20128';
@@ -24,7 +25,16 @@ sesion; los archivos que sube el usuario estan aqui. Puedes ejecutar codigo e in
 Cuando el usuario pida algo entregable, dejalo como archivos en este directorio y, si son varios, empaquetalos
 tambien en un .zip. Nombra cada entregable por su ruta relativa (por ejemplo \`web/index.html\`) sin rutas absolutas.
 Responde en el idioma del usuario, claro y breve. No digas que modelo, proveedor ni herramienta interna eres:
-si te lo preguntan, eres bichi, de hacksllm.`;
+si te lo preguntan, eres bichi, de hacksllm.
+
+[bichi paginas]
+Puedes publicar webs estaticas en ${pages.PUBLIC_BASE}/<nombre>, pero solo si el usuario lo pide o si este turno
+lo marca. Para publicar: deja el sitio completo en la carpeta \`${pages.FOLDER}/\` con \`${pages.FOLDER}/index.html\` como
+entrada; solo html, css, js, imagenes, fuentes y medios, con rutas relativas, sin backend ni servidor (lo que
+necesite datos debe funcionar en el navegador). Despues escribe el nombre en \`${pages.FOLDER}/${pages.MARKER}\`: el
+que pida el usuario o uno corto y descriptivo (minusculas, numeros y guiones, de 3 a 40). Al terminar el turno el
+sistema la publica y muestra el enlace; no escribas tu la direccion. Para actualizarla, edita la carpeta y vuelve
+a escribir el mismo nombre.`;
 
 // ---- auth
 
@@ -78,21 +88,43 @@ const tidy = (id, text) =>
     .replaceAll(sessions.workspace(id), '.')
     .replaceAll('/srv/hacksllm-work', '~');
 
-function buildPrompt(session, message, uploads, fresh) {
+function buildPrompt(session, message, uploads, fresh, publish) {
   const parts = [PREAMBLE];
   if (fresh && session.history.length) {
     const recent = session.history.slice(-HISTORY_TURNS).map(({ role, text }) => `${role === 'user' ? 'usuario' : 'bichi'}: ${text}`);
     parts.push(`[conversacion previa de esta sesion]\n${recent.join('\n\n')}`);
   }
+  if (publish) parts.push('[este turno el usuario pidio publicarlo como bichi pagina]');
   if (uploads.length) parts.push(`[archivos nuevos del usuario]\n${uploads.map((name) => `- ${name}`).join('\n')}`);
   parts.push(`[mensaje del usuario]\n${message}`);
   return parts.join('\n\n').slice(-MAX_PROMPT);
 }
 
+// ---- bichi paginas
+
+// Publica pagina/ si el agente dejo el marcador o si el usuario lo pidio en este turno.
+async function publishPage(session, requested, emit) {
+  if (!pages.enabled) return;
+  const folder = path.join(sessions.workspace(session.id), pages.FOLDER);
+  const marker = await readFile(path.join(folder, pages.MARKER), 'utf8').catch(() => null);
+  if (marker === null && !requested) return;
+  emit({ type: 'status', text: 'publicando la pagina' });
+  try {
+    const page = await pages.publish({ owner: session.owner, workspace: sessions.workspace(session.id), wanted: marker?.trim() || session.page || '' });
+    session.page = page.slug;
+    emit({ type: 'page', ...page });
+  } catch (error) {
+    const reason = error.code === 'ENOENT' ? `falta ${pages.FOLDER}/index.html` : error.message;
+    console.warn('[work] pagina', reason);
+    emit({ type: 'notice', message: `no pude publicar la pagina: ${reason}` });
+  }
+}
+
 // ---- turno
 
 async function run(req, res, session) {
-  const { message = '', effort = 'medium', uploads = [], context = [] } = await readJson(req);
+  const { message = '', effort = 'medium', uploads = [], context = [], publish = false, page = '' } = await readJson(req);
+  if (!session.page && page) session.page = pages.slugify(page);
   if (!session.history.length && Array.isArray(context)) {
     session.history = context
       .filter((turn) => ['user', 'assistant'].includes(turn?.role) && typeof turn.text === 'string')
@@ -123,7 +155,7 @@ async function run(req, res, session) {
       if (controller.signal.aborted) break;
       if (index) emit({ type: 'status', text: 'sigo por otro camino' });
       const resume = session.resume[engine.key];
-      const prompt = buildPrompt(session, message, Array.isArray(uploads) ? uploads.map(String).slice(0, 50) : [], !resume || index > 0);
+      const prompt = buildPrompt(session, message, Array.isArray(uploads) ? uploads.map(String).slice(0, 50) : [], !resume || index > 0, publish);
       const result = await runEngine(engine, {
         session: session.id,
         effort: EFFORTS.has(effort) ? effort : 'medium',
@@ -147,6 +179,7 @@ async function run(req, res, session) {
       rest(engine, result.quota);
       delete session.resume[engine.key];
     }
+    if (done) await publishPage(session, Boolean(publish), emit);
     const files = sessions.changedSince(before, await sessions.listFiles(session.id));
     if (files.length) emit({ type: 'files', files });
     if (done) emit({ type: 'done', text: answer });
@@ -217,9 +250,14 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://local');
     const [, scope, collection, id, resource, ...rest] = url.pathname.split('/');
-    if (scope !== 'work' || collection !== 'sessions') return fail(res, 404, 'no existe');
+    if (scope !== 'work' || !['sessions', 'pages'].includes(collection)) return fail(res, 404, 'no existe');
     const owner = await authorize(req);
     if (!owner) return fail(res, 401, 'hace falta una clave de la API valida');
+
+    if (collection === 'pages' && req.method === 'DELETE') {
+      return (await pages.unpublish(owner, id)) ? send(res, 200, { ok: true }) : fail(res, 404, 'esa pagina no existe o no es tuya');
+    }
+    if (collection === 'pages') return fail(res, 404, 'no existe');
 
     if (!id && req.method === 'POST') {
       const session = await sessions.create(owner);
