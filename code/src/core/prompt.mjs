@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import { detectShell } from '../tools/shell.mjs';
 import { loadAgents, loadMemory } from './project.mjs';
+import { listSkills } from './skills.mjs';
 
 const EFFORT = {
   low: 'Esfuerzo bajo: ve al grano. Explora lo minimo, haz el cambio y responde corto.',
@@ -20,7 +21,7 @@ function gitInfo(cwd) {
   }
 }
 
-export function systemPrompt({ cwd, effort = 'medium', mode = 'normal', sub = null }) {
+export function systemPrompt({ cwd, effort = 'medium', mode = 'normal', sub = null, goal = null }) {
   const shell = detectShell();
   const agents = sub ? [] : loadAgents(cwd);
   const memory = loadMemory(cwd);
@@ -55,6 +56,13 @@ export function systemPrompt({ cwd, effort = 'medium', mode = 'normal', sub = nu
 El usuario quiere ver un plan antes de que cambies nada. Investiga todo lo que necesites con herramientas de lectura, pero no edites archivos ni ejecutes comandos que cambien cosas. Cuando tengas el plan, presentalo con exit_plan_mode y espera su aprobacion.`,
     );
   if (sub) parts.push(`# Eres un subagente\nTe lanzo el agente principal para una tarea concreta. Hazla de forma autonoma y termina con un informe final claro y completo (es lo unico que vera el agente principal). ${sub.prompt ?? ''}`);
+  const skills = listSkills(cwd);
+  if (skills.length) parts.push(`# Skills disponibles
+Procedimientos guardados por el usuario. Si la tarea encaja con una, cargala con la herramienta skill antes de empezar.
+${skills.map((skill) => `- ${skill.name}: ${skill.description.slice(0, 300)}`).join('\n')}`);
+  if (goal && !goal.done) parts.push(`# Objetivo activo (/goal)
+${goal.text}
+Trabaja de forma autonoma hasta cumplirlo por completo. Cuando este cumplido y verificado, llama goal_done con un resumen. Si no se puede cumplir, explica por que y llama goal_done con lo que lograste.`);
   if (agents.length) parts.push(`# Agentes disponibles para task\n${agents.map((agent) => `- ${agent.name}: ${agent.description}`).join('\n')}`);
   if (memory) parts.push(`# Memoria e instrucciones del proyecto y del usuario\nSiguelas; mandan sobre lo general de arriba.\n\n${memory}`);
   return parts.join('\n\n');

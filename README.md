@@ -129,6 +129,15 @@ El instalador deja `bichi` en `~/.bichi/bin` (en el PATH) y, si no hay Node 20+,
   Requiere el parche del Playground de `deploy/patch-release.mjs` (respeta el mensaje de sistema del cliente).
 - **Otros proveedores**: NVIDIA build, Mistral, Groq, OpenRouter, Cerebras, Ollama o cualquier api compatible
   desde `/config`.
+- **App de pantalla completa**: historial con scroll y raton (seleccion que copia, links clicables), comandos y
+  archivos sugeridos encima de la entrada, imagenes (alt+v o pegar una ruta; un modelo con vision las describe),
+  esc esc para rebobinar conversacion y codigo, `/goal` para trabajar solo hasta cumplir algo, `/context`.
+- **Traer conversaciones**: `/import` de Claude Code o Codex y `/tp` de bichi work (boton "llevar a bichi code",
+  guardado en `/opt/hacksllm/data/transport` por clave). Las grandes se resumen por partes con los modelos gratis.
+- **Contexto**: los resultados viejos de herramientas van recortados y al 75% la conversacion se resume sola
+  (si resumir falla, recorta lo mas viejo).
+- **Carpeta .bichi**: memoria `.bichi/BICHI.md`, ajustes, agentes, comandos y skills del proyecto (tambien lee
+  `.claude/`, CLAUDE.md y AGENTS.md); sesiones por proyecto en `~/.bichi/projects`.
 - **Lo demas**: modos con shift+tab (normal, acepta ediciones, plan, sin preguntas), permisos con diff, subagentes
   en paralelo (`task`), lista de tareas, memoria `BICHI.md` (`/init`, `#nota`), agentes y comandos propios en
   `.bichi/agents` y `.bichi/commands`, hooks y servidores MCP en `.bichi/settings.json`, `/undo`, `/resume`,

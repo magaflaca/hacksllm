@@ -133,12 +133,11 @@ async function main() {
   const app = new App({ config, state, router, cwd, settings, extraTools, session });
   if (options.mode) app.mode = options.mode;
   process.on('uncaughtException', (error) => {
-    app.screen.release();
+    app.term.leave();
     process.stderr.write(`\n${c.err('error inesperado:')} ${error.stack ?? error.message}\n`);
     process.exit(1);
   });
   app.start();
-  app.banner();
 
   startMcp(settings.mcpServers).then((tools) => {
     extraTools.push(...tools);

@@ -8,9 +8,12 @@ import { loadAgents } from './project.mjs';
 import { parseArgs, toTextMessages, visiblePrefix } from './protocol.mjs';
 import { systemPrompt } from './prompt.mjs';
 import { ContextError } from './router.mjs';
+import { skillTool } from './skills.mjs';
 
 const MAX_STEPS = 150;
 const MAX_RESULT = 30_000;
+const KEEP_RESULTS = 8; // resultados de herramientas recientes que van completos al modelo
+const OLD_RESULT = 1_500; // los mas viejos se recortan a esto
 const PARALLEL = new Set(['read', 'net']);
 
 const clip = (text) => (text.length > MAX_RESULT ? `${text.slice(0, MAX_RESULT)}\n(… recortado, ${text.length} caracteres)` : text);
@@ -23,7 +26,9 @@ export class Agent {
     this.messages = [];
     this.todos = [];
     this.queue = [];
-    this.turns = []; // checkpoints por turno para /undo
+    this.turns = []; // por turno: {index del mensaje, archivos antes de cambiarlos} para /undo y rebobinar
+    this.goal = null; // {text, done, rounds}
+    this.subagents = 0;
     this.usage = { prompt: 0, completion: 0, lastPrompt: 0 };
     this.readFiles = new Set();
     this.busy = false;
@@ -32,11 +37,12 @@ export class Agent {
 
   tools() {
     const allow = this.sub?.tools ?? null;
-    return toolset({ extra: this.extraTools, sub: !!this.sub, allow, plan: this.getMode() === 'plan' });
+    const extra = [...this.extraTools, skillTool, ...(this.goal && !this.goal.done && !this.sub ? [goalDone] : [])];
+    return toolset({ extra, sub: !!this.sub, allow, plan: this.getMode() === 'plan' });
   }
 
   system() {
-    return systemPrompt({ cwd: this.cwd, effort: this.config.effort, mode: this.getMode(), sub: this.sub });
+    return systemPrompt({ cwd: this.cwd, effort: this.config.effort, mode: this.getMode(), sub: this.sub, goal: this.sub ? null : this.goal });
   }
 
   contextLimit() {
@@ -44,7 +50,7 @@ export class Agent {
   }
 
   contextUsed() {
-    return this.usage.lastPrompt || estimateTokens(this.messages);
+    return this.usage.lastPrompt || estimateTokens(this.payload()) + 3500;
   }
 
   // Un mensaje mientras trabaja: entra en el siguiente paso (redirigir sin cortar).
@@ -58,7 +64,7 @@ export class Agent {
 
   async send(content) {
     this.messages.push({ role: 'user', content });
-    this.turns.push(new Map());
+    this.turns.push({ index: this.messages.length - 1, files: new Map() });
     this.busy = true;
     this.controller = new AbortController();
     try {
@@ -71,22 +77,44 @@ export class Agent {
 
   checkpoint(file, before) {
     const turn = this.turns.at(-1);
-    if (turn && !turn.has(file)) turn.set(file, before);
+    if (turn && !turn.files.has(file)) turn.files.set(file, before);
   }
 
-  // Deshace los cambios en archivos del ultimo turno que tocó archivos.
+  async restore(turns) {
+    const touched = new Set();
+    for (const turn of [...turns].reverse()) {
+      for (const [file, before] of turn.files) {
+        if (before === null) await rm(file, { force: true });
+        else await writeFile(file, before);
+        touched.add(file);
+      }
+    }
+    invalidate();
+    return [...touched];
+  }
+
+  // Deshace los cambios en archivos del ultimo turno que toco archivos.
   async undo() {
     while (this.turns.length) {
       const turn = this.turns.pop();
-      if (!turn.size) continue;
-      for (const [file, before] of turn) {
-        if (before === null) await rm(file, { force: true });
-        else await writeFile(file, before);
-      }
-      invalidate();
-      return [...turn.keys()];
+      if (turn.files.size) return this.restore([turn]);
     }
     return [];
+  }
+
+  // Archivos cambiados desde el mensaje `index` (para ofrecer restaurar el codigo al rebobinar).
+  changedSince(index) {
+    return this.turns.filter((turn) => turn.index >= index && turn.files.size);
+  }
+
+  // Vuelve la conversacion (y si se pide, el codigo) al punto antes del mensaje `index`.
+  async rewind(index, { code = false } = {}) {
+    const later = this.turns.filter((turn) => turn.index >= index);
+    const files = code ? await this.restore(later) : [];
+    this.turns = this.turns.filter((turn) => turn.index < index);
+    this.messages.splice(index);
+    this.usage.lastPrompt = 0;
+    return files;
   }
 
   async loop(signal) {
@@ -97,7 +125,7 @@ export class Agent {
         this.ui.onSteer?.(text);
         this.messages.push({ role: 'user', content: `(mensaje del usuario mientras trabajabas; tenlo en cuenta desde ya)\n${text}` });
       }
-      if (!this.sub && this.config.autoCompact !== false && this.contextUsed() > this.contextLimit() * 0.8) {
+      if (!this.sub && this.config.autoCompact !== false && this.contextUsed() > this.contextLimit() * 0.75) {
         await this.compact('', signal);
       }
       const tools = this.tools();
@@ -137,8 +165,20 @@ export class Agent {
     return { text: '', steps: MAX_STEPS };
   }
 
+  // Lo que va al modelo: los resultados de herramientas viejos van recortados (el historial guarda todo).
+  payload() {
+    const toolIndexes = this.messages.map((message, index) => (message.role === 'tool' ? index : -1)).filter((index) => index >= 0);
+    const old = new Set(toolIndexes.slice(0, -KEEP_RESULTS));
+    return this.messages.map((message, index) =>
+      old.has(index) && message.content.length > OLD_RESULT
+        ? { ...message, content: `${message.content.slice(0, OLD_RESULT)}
+(… resultado antiguo recortado para ahorrar contexto; vuelve a ejecutar la herramienta si lo necesitas)` }
+        : message,
+    );
+  }
+
   async request(tools, signal) {
-    const messages = [{ role: 'system', content: this.system() }, ...this.messages];
+    const messages = [{ role: 'system', content: this.system() }, ...this.payload()];
     let shown = 0;
     let raw = '';
     const result = await this.router.complete({
@@ -296,32 +336,86 @@ export class Agent {
     child.turns = this.turns;
     child.messages.push({ role: 'user', content: prompt });
     child.controller = { abort() {} };
-    const result = await child.loop(signal);
+    this.subagents++;
+    this.ui.onSubagents?.(this.subagents);
+    let result;
+    try {
+      result = await child.loop(signal);
+    } finally {
+      this.subagents--;
+      this.ui.onSubagents?.(this.subagents);
+    }
     const seconds = Math.round((Date.now() - started) / 1000);
     return { text: result.text, summary: `${tools} ${tools === 1 ? 'herramienta' : 'herramientas'} · ${seconds}s` };
   }
 
-  // Resume la conversacion para liberar contexto.
+  // Resume la conversacion para liberar contexto, con los modelos gratis de la cadena. Si resumir falla, recorta
+  // lo mas viejo para que el trabajo nunca se quede atascado por falta de contexto.
   async compact(instructions = '', signal) {
     if (this.messages.length < 3) return false;
     this.ui.onCompact?.('start');
-    const history = toTextMessages(this.messages);
-    const request = `Resume esta conversacion para continuarla sin perder nada importante: objetivo del usuario, decisiones tomadas, archivos tocados (con rutas) y su estado, comandos utiles, errores pendientes y el siguiente paso. Se concreto y completo, en el idioma de la conversacion.${instructions ? ` Ademas: ${instructions}` : ''}`;
-    const result = await this.router.complete({
-      messages: [{ role: 'system', content: 'Eres un asistente que resume conversaciones de programacion con precision.' }, ...history, { role: 'user', content: request }],
-      tools: [],
-      signal: signal ?? new AbortController().signal,
-    });
+    const lastUser = this.messages.findLastIndex((message) => message.role === 'user' && typeof message.content === 'string');
+    const keepFrom = lastUser > 0 && JSON.stringify(this.messages.slice(lastUser)).length < 40_000 ? lastUser : this.messages.length;
+    const older = this.payload().slice(0, keepFrom);
+    let transcript = toTextMessages(older)
+      .map((message) => `## ${message.role === 'user' ? 'usuario' : 'bichi'}\n${typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}`)
+      .join('\n\n');
+    if (transcript.length > 220_000) transcript = `${transcript.slice(0, 30_000)}\n\n(… parte intermedia omitida …)\n\n${transcript.slice(-180_000)}`;
+    const request = `Resume esta conversacion de programacion para continuarla sin perder nada importante: objetivo del usuario, decisiones tomadas, archivos tocados (con rutas) y su estado, comandos utiles, errores pendientes y el siguiente paso. Se concreto y completo, en el idioma de la conversacion.${instructions ? ` Ademas: ${instructions}` : ''}\n\n<conversacion>\n${transcript}\n</conversacion>`;
+    let summary;
+    try {
+      const result = await this.router.complete({
+        messages: [{ role: 'system', content: 'Eres un asistente que resume conversaciones de programacion con precision.' }, { role: 'user', content: request }],
+        tools: [],
+        signal: signal ?? new AbortController().signal,
+      });
+      summary = result.text.trim();
+    } catch (error) {
+      if (error.name === 'AbortError') throw error;
+      summary = null;
+    }
     const todos = this.todos.length ? `\n\nLista de tareas actual:\n${this.todos.map((item) => `- [${item.status}] ${item.content}`).join('\n')}` : '';
-    this.messages = [
-      { role: 'user', content: `(Esta conversacion se resumio para liberar contexto. Resumen:)\n\n${result.text}${todos}` },
-      { role: 'assistant', content: 'Entendido, sigo desde aqui.' },
-    ];
+    const recent = this.messages.slice(keepFrom);
+    if (summary) {
+      this.messages = [
+        { role: 'user', content: `(Esta conversacion se resumio para liberar contexto. Resumen:)
+
+${summary}${todos}` },
+        { role: 'assistant', content: 'Entendido, sigo desde aqui.' },
+        ...recent,
+      ];
+    } else {
+      // Sin resumen: se queda el primer pedido y el ultimo tercio, cortando en un mensaje del usuario.
+      const first = this.messages.find((message) => message.role === 'user');
+      const cut = this.messages.findIndex((message, index) => index >= Math.floor(this.messages.length * 0.66) && message.role === 'user' && typeof message.content === 'string');
+      const tail = cut > 0 ? this.messages.slice(cut) : recent;
+      this.messages = [
+        { role: 'user', content: `(Se recorto la conversacion para liberar contexto. El pedido original era:)
+
+${typeof first?.content === 'string' ? first.content.slice(0, 4000) : ''}${todos}` },
+        { role: 'assistant', content: 'Entendido, sigo desde aqui.' },
+        ...tail,
+      ];
+    }
+    this.turns = [];
     this.usage.lastPrompt = 0;
-    this.ui.onCompact?.('end', result.text);
+    this.ui.onCompact?.('end', summary);
     return true;
   }
 }
+
+// Herramienta para cerrar un objetivo de /goal.
+const goalDone = {
+  name: 'goal_done',
+  kind: 'meta',
+  description: 'Marca como cumplido el objetivo activo (/goal). Llamala solo cuando este completo y verificado, con un resumen de lo logrado.',
+  parameters: { type: 'object', properties: { summary: { type: 'string' } }, required: ['summary'] },
+  label: () => ({ title: 'Objetivo cumplido', arg: '' }),
+  async run(input, ctx) {
+    if (ctx.agent.goal) ctx.agent.goal.done = String(input.summary ?? '');
+    return { content: 'objetivo marcado como cumplido', summary: String(input.summary ?? '').slice(0, 160) || 'listo' };
+  },
+};
 
 function safeLabel(tool, input, ctx) {
   try {

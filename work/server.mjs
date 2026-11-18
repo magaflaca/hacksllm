@@ -9,6 +9,7 @@ import { Transform } from 'node:stream';
 import { ENGINES, available, rest, runEngine } from './engines.mjs';
 import * as sessions from './sessions.mjs';
 import * as pages from './pages.mjs';
+import * as transport from './transport.mjs';
 
 const PORT = Number(process.env.WORK_PORT ?? 20130);
 const GATEWAY = process.env.WORK_GATEWAY ?? 'http://127.0.0.1:20128';
@@ -277,6 +278,22 @@ function zipFolder(res, cwd, name) {
   res.on('close', () => child.kill());
 }
 
+// /work/tp: conversaciones llevadas de la web a bichi code.
+async function transportRoute(req, res, owner, id) {
+  if (!id && req.method === 'POST') {
+    const chunks = [];
+    for await (const chunk of capped(req, transport.MAX_BODY)) chunks.push(chunk);
+    return send(res, 201, await transport.save(owner, JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')));
+  }
+  if (!id && req.method === 'GET') return send(res, 200, { items: await transport.list(owner) });
+  if (id && req.method === 'GET') {
+    const item = await transport.get(owner, id);
+    return item ? send(res, 200, item) : fail(res, 404, 'esa conversacion ya no esta');
+  }
+  if (id && req.method === 'DELETE') return (await transport.remove(owner, id), send(res, 200, { ok: true }));
+  return fail(res, 405, 'metodo no permitido');
+}
+
 async function pagesRoute(req, res, owner, slug, resource, rest) {
   const route = rest.join('/');
   if (!slug && req.method === 'GET') return send(res, 200, { pages: await pages.mine(owner) });
@@ -304,11 +321,12 @@ const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://local');
     const [, scope, collection, id, resource, ...rest] = url.pathname.split('/');
-    if (scope !== 'work' || !['sessions', 'pages'].includes(collection)) return fail(res, 404, 'no existe');
+    if (scope !== 'work' || !['sessions', 'pages', 'tp'].includes(collection)) return fail(res, 404, 'no existe');
     const owner = await authorize(req);
     if (!owner) return fail(res, 401, 'hace falta una clave de la API valida');
 
     if (collection === 'pages') return await pagesRoute(req, res, owner, id, resource, rest);
+    if (collection === 'tp') return await transportRoute(req, res, owner, id);
 
     if (!id && req.method === 'POST') {
       const session = await sessions.create(owner);

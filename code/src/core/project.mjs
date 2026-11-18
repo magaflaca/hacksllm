@@ -15,14 +15,14 @@ export function memoryFiles(cwd) {
     if (path.dirname(dir) === dir) break;
   }
   for (const dir of chain) {
-    for (const name of MEMORY_NAMES) {
+    for (const name of [path.join('.bichi', 'BICHI.md'), ...MEMORY_NAMES, path.join('.claude', 'CLAUDE.md')]) {
       const file = path.join(dir, name);
       if (existsSync(file)) {
         found.push({ scope: dir === cwd ? 'proyecto' : 'carpeta superior', file });
         break;
       }
     }
-    const local = path.join(dir, 'BICHI.local.md');
+    const local = [path.join(dir, '.bichi', 'BICHI.local.md'), path.join(dir, 'BICHI.local.md')].find((file) => existsSync(file)) ?? '';
     if (existsSync(local)) found.push({ scope: 'local', file: local });
   }
   return found;
@@ -64,7 +64,7 @@ function markdownDir(dir) {
 }
 
 export function loadAgents(cwd) {
-  const all = [...markdownDir(paths.agents), ...markdownDir(path.join(cwd, '.bichi', 'agents'))];
+  const all = [...markdownDir(paths.agents), ...markdownDir(path.join(cwd, '.claude', 'agents')), ...markdownDir(path.join(cwd, '.bichi', 'agents'))];
   const byName = new Map(all.map((agent) => [agent.name, agent]));
   return [...byName.values()].map(({ name, meta, body, file }) => ({
     name,
@@ -77,7 +77,7 @@ export function loadAgents(cwd) {
 }
 
 export function loadCommands(cwd) {
-  const all = [...markdownDir(paths.commands), ...markdownDir(path.join(cwd, '.bichi', 'commands'))];
+  const all = [...markdownDir(paths.commands), ...markdownDir(path.join(cwd, '.claude', 'commands')), ...markdownDir(path.join(cwd, '.bichi', 'commands'))];
   const byName = new Map(all.map((command) => [command.name, command]));
   return [...byName.values()].map(({ name, meta, body, file }) => ({ name, description: meta.description ?? 'comando propio', body, file }));
 }

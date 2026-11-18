@@ -1,6 +1,6 @@
 // Markdown a terminal, linea a linea para poder pintar mientras llega el stream.
 import { highlight } from './highlight.mjs';
-import { bold, c, dim, fg, italic, strike, underline, width, wrap } from './term.mjs';
+import { bold, c, dim, fg, hyperlink, italic, strike, underline, width, wrap } from './term.mjs';
 
 const codeInline = fg('#a6d2ff');
 
@@ -16,8 +16,8 @@ export function inline(text) {
     .replace(/(^|[^*\w])\*([^*\s][^*\n]*?)\*(?!\w)/g, (_, pre, body) => pre + italic(body))
     .replace(/(^|[^_\w])_([^_\s][^_\n]*?)_(?!\w)/g, (_, pre, body) => pre + italic(body))
     .replace(/~~([^~\n]+)~~/g, (_, body) => strike(body))
-    .replace(/!?\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, label, url) => `${underline(c.sky(label))} ${dim(`(${url})`)}`)
-    .replace(/(^|\s)(https?:\/\/[^\s)]+)/g, (_, pre, url) => pre + underline(c.sky(url)));
+    .replace(/!?\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, label, url) => hyperlink(url, underline(c.sky(label))))
+    .replace(/(^|\s)(https?:\/\/[^\s)]+)/g, (_, pre, url) => pre + hyperlink(url, underline(c.sky(url))));
   return out.replace(/\u0000(\d+)\u0000/g, (_, index) => spans[Number(index)]);
 }
 

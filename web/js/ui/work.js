@@ -45,6 +45,7 @@ export function createWork({ root, mascot, openKey }) {
   const picker = root.querySelector('#work-file');
   const tray = root.querySelector('#work-attachments');
   const zipButton = root.querySelector('[data-action="work-zip"]');
+  const tpButton = root.querySelector('[data-action="work-tp"]');
   const publishButton = root.querySelector('[data-action="work-publish"]');
   const pageList = root.querySelector('#work-pages');
   const pageLabel = root.querySelector('#work-pages-label');
@@ -228,6 +229,7 @@ export function createWork({ root, mascot, openKey }) {
 
   function show(session) {
     current = session;
+    tpButton.disabled = !session.messages.length;
     pending = [];
     renderTray();
     renderThread();
@@ -551,6 +553,7 @@ export function createWork({ root, mascot, openKey }) {
     const message = { role: 'user', content, uploads };
     if (!current.messages.length) thread.replaceChildren();
     sessions.push(current, message);
+    tpButton.disabled = false;
     thread.append(userNode(message));
     prompt.value = '';
     resize();
@@ -572,6 +575,17 @@ export function createWork({ root, mascot, openKey }) {
   root.querySelector('[data-action="work-attach"]').addEventListener('click', () => (work.hasKey() ? picker.click() : locked()));
   root.querySelector('[data-action="work-new"]').addEventListener('click', startNew);
   zipButton.addEventListener('click', () => save());
+  tpButton.addEventListener('click', async () => {
+    if (!work.hasKey()) return locked();
+    if (!current.messages.length) return;
+    try {
+      await work.transport(current);
+      sound.play('copy');
+      mascot.say('listo: en bichi code escribe /tp', 4200);
+    } catch (error) {
+      mascot.say(error.message, 2600);
+    }
+  });
   publishButton.addEventListener('click', () => {
     if (!work.hasKey()) return locked();
     setPublishing(!publishing);

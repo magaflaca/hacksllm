@@ -122,7 +122,14 @@ export const shell = {
     clearTimeout(timer);
     ctx.signal?.removeEventListener('abort', onAbort);
     invalidate();
-    const text = clip(output.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '').trimEnd());
+    // Saltos de Windows fuera; de una barra de progreso con \r queda solo su ultimo estado.
+    const plain = output
+      .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line) => line.split('\r').pop())
+      .join('\n');
+    const text = clip(plain.trimEnd());
     const note = timedOut ? `\n(cortado tras ${seconds}s)` : ctx.signal?.aborted ? '\n(interrumpido por el usuario)' : code ? `\n(salio con codigo ${code})` : '';
     return { content: (text || '(sin salida)') + note, output: text, exit: code, summary: timedOut ? 'tiempo agotado' : code ? `codigo ${code}` : null };
   },

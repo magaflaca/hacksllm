@@ -27,12 +27,12 @@ const SYSTEMS = {
 };
 
 const FEATURES = [
-  ['sky', 'trabaja en tu compu', 'lee el proyecto, edita archivos, ejecuta comandos y pruebas, busca en la web. te muestra cada cambio con su diff.'],
-  ['mint', 'nunca se queda sin modelo', 'en auto empieza por el mas rapido y, si uno se agota, sigue con el siguiente sin que tengas que hacer nada.'],
-  ['butter', 'tu decides cuanto pregunta', 'shift+tab cambia de modo: normal, acepta ediciones, plan (propone antes de tocar) o sin preguntas.'],
-  ['blush', 'agentes en paralelo', 'lanza subagentes para investigar o hacer partes del trabajo a la vez, y lleva una lista de tareas.'],
-  ['sky', 'memoria del proyecto', 'BICHI.md guarda como se trabaja en tu repo. /init lo crea solo; #nota agrega algo al vuelo.'],
-  ['mint', 'tus claves, tus modelos', 'ademas de hacksllm puedes conectar NVIDIA build, Mistral, Groq, OpenRouter, Cerebras, Ollama o cualquier api compatible.'],
+  ['sky', 'una app en tu terminal', 'ocupa la terminal entera: historial con scroll y raton, seleccion que copia, links que se abren con un clic y comandos que aparecen sobre la entrada.'],
+  ['mint', 'nunca se queda sin modelo', 'en auto empieza por el mas rapido y, si uno se agota, sigue con el siguiente. el contexto se resume solo con los modelos gratis.'],
+  ['butter', 'tu decides cuanto pregunta', 'shift+tab cambia de modo: normal, acepta ediciones, plan (propone antes de tocar) o sin preguntas. esc esc vuelve atras, tambien el codigo.'],
+  ['blush', 'agentes, skills y objetivos', 'subagentes en paralelo, skills (las de Claude Code tambien sirven) y /goal para que trabaje solo hasta cumplir algo.'],
+  ['sky', 'trae tus conversaciones', '/import abre charlas de Claude Code o Codex y /tp las de bichi work con sus archivos, resumidas para que quepan.'],
+  ['mint', 'imagenes y tus propias claves', 'alt+v o pega la ruta de una imagen y bichi la mira. ademas de hacksllm puedes conectar NVIDIA, Mistral, Groq, OpenRouter y mas.'],
 ];
 
 const KEYS = [
@@ -43,18 +43,20 @@ const KEYS = [
   ['!comando', 'ejecutar en la shell'],
   ['#nota', 'guardar en la memoria'],
   ['ctrl+o', 'ver resultados completos'],
+  ['alt+v', 'pegar una imagen'],
+  ['ctrl+r', 'buscar en tu historial'],
   ['alt+enter', 'nueva linea'],
 ];
 
 const COMMANDS = [
   ['/model', 'elegir modelo o auto'],
   ['/effort', 'esfuerzo bajo, medio o alto'],
-  ['/config', 'ajustes, proveedores y claves'],
+  ['/goal', 'trabajar solo hasta cumplir un objetivo'],
+  ['/tp', 'traer una conversacion de bichi work'],
+  ['/import', 'traer una charla de Claude Code o Codex'],
+  ['/context', 'ver en que se usa el contexto'],
   ['/resume', 'retomar una conversacion'],
-  ['/undo', 'deshacer los ultimos cambios'],
-  ['/compact', 'resumir para liberar contexto'],
-  ['/init', 'crear BICHI.md'],
-  ['/review', 'revisar los cambios del repo'],
+  ['/init', 'crear la memoria .bichi/BICHI.md'],
 ];
 
 // Terminal de muestra: una sesion corta de bichi que aparece linea a linea.
@@ -93,7 +95,7 @@ function terminal() {
     h(
       'div.term-body',
       {},
-      h('div.term-banner', {}, beetle, h('div', {}, logo, h('div.t-soft', {}, 'v1.0.0 · tu bicho programador'))),
+      h('div.term-banner', {}, beetle, h('div', {}, logo, h('div.t-soft', {}, 'v1.1.0 · tu bicho programador'))),
       ...lines,
       h('div.term-input', { style: `--i:${SCRIPT.length}` }, h('span.t-brand', {}, '›'), h('span.term-caret')),
       h('div.term-status', { style: `--i:${SCRIPT.length}` }, h('span.t-plum', {}, '▸▸ acepta ediciones'), h('span.t-sky', {}, 'auto · bichi-turbo')),

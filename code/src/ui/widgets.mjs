@@ -92,3 +92,41 @@ export class Field {
 }
 
 export const tag = (text, color = 'brand') => fg(color === 'brand' ? '#5f9be0' : color)(text);
+
+// ctrl+r: busca hacia atras en lo que escribiste antes; ctrl+r otra vez salta a la coincidencia anterior.
+export class HistorySearch {
+  constructor(history) {
+    this.history = history;
+    this.field = new Field({ title: 'buscar en el historial' });
+    this.skip = 0;
+    this.done = null;
+    this.promise = new Promise((resolve) => (this.done = resolve));
+    this.field.promise.then((value) => this.done(value === null ? null : this.match()));
+  }
+
+  matches() {
+    const query = this.field.editor.text.toLowerCase();
+    return [...this.history].reverse().filter((entry) => !query || entry.toLowerCase().includes(query));
+  }
+
+  match() {
+    const list = this.matches();
+    return list[Math.min(this.skip, list.length - 1)] ?? null;
+  }
+
+  key(key) {
+    if (key.ctrl && key.name === 'r') {
+      this.skip = Math.min(this.skip + 1, Math.max(0, this.matches().length - 1));
+      return;
+    }
+    this.skip = 0;
+    this.field.key(key);
+  }
+
+  render(columns) {
+    const found = this.match();
+    const preview = found ? found.replace(/\s+/g, ' ') : '(nada coincide)';
+    this.field.hint = `${found ? c.sky(preview) : dim(preview)}${this.matches().length > 1 ? dim(`  · ctrl+r para la anterior (${this.skip + 1}/${this.matches().length})`) : ''}`;
+    return this.field.render(columns);
+  }
+}

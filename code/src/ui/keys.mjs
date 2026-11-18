@@ -92,6 +92,21 @@ export function createDecoder(emit) {
           i++;
           continue;
         }
+        if (next === '[' && input[i + 2] === '<') {
+          // Raton SGR: ESC [ < boton ; x ; y M|m
+          const match = /^\x1b\[<\d+;\d+;\d+[Mm]/.exec(input.slice(i));
+          if (!match) {
+            if (input.length - i < 20) {
+              pending = input.slice(i);
+              return;
+            }
+            i += 3;
+            continue;
+          }
+          emit({ name: 'mouse', sequence: match[0] });
+          i += match[0].length;
+          continue;
+        }
         if (next === '[' || next === 'O') {
           const match = /^[\d;:?]*[A-Za-z~]/.exec(input.slice(i + 2));
           if (!match) {

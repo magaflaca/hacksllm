@@ -13,6 +13,25 @@ async function call(path, options = {}) {
 
 export const work = {
   hasKey: () => Boolean(store.get('apiKey', '')),
+  // Deja la conversacion en el servidor para abrirla en bichi code con /tp.
+  transport: (session) =>
+    fetch(`${location.origin}/work/tp`, {
+      method: 'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: session.title,
+        remote: session.remote,
+        messages: session.messages.map(({ role, content, files }) => ({
+          role,
+          content: `${content ?? ''}${files?.length ? `
+
+(archivos entregados: ${files.map((file) => file.path).join(', ')})` : ''}`,
+        })),
+      }),
+    }).then(async (response) => {
+      if (!response.ok) throw await failure(response);
+      return response.json();
+    }),
   create: () => call('', { method: 'POST' }).then(({ id }) => id),
   get: (id) => call(`/${id}`),
   files: (id) => call(`/${id}/files`).then(({ files }) => files),

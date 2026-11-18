@@ -1,6 +1,8 @@
 // Como se ven en el historial los mensajes, las herramientas y sus resultados.
 import { renderDiff } from './diff.mjs';
-import { bold, c, dim, fg, italic, wrap } from './term.mjs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { bold, c, dim, fg, hyperlink, italic, wrap } from './term.mjs';
 
 const BAR = c.soft('╰');
 
@@ -12,7 +14,10 @@ export function userBlock(text, columns) {
 
 export function toolTitle(view, state = 'done') {
   const dot = state === 'error' ? c.err('●') : state === 'denied' ? c.warn('●') : state === 'running' ? c.brand('●') : c.ok('●');
-  const arg = view.label.arg ? ` ${c.soft(view.label.arg.length > 160 ? `${view.label.arg.slice(0, 160)}…` : view.label.arg)}` : '';
+  const text = view.label.arg ? c.soft(view.label.arg.length > 160 ? `${view.label.arg.slice(0, 160)}…` : view.label.arg) : '';
+  // Las rutas de archivos son links: clic para abrirlas.
+  const isFile = ['read', 'write', 'edit'].includes(view.tool?.name) && view.label.arg;
+  const arg = text ? ` ${isFile ? hyperlink(pathToFileURL(path.resolve(view.label.arg)).href, text) : text}` : '';
   return `${dot} ${bold(view.label.title)}${arg}`;
 }
 
