@@ -29,6 +29,16 @@ done
 # El CLI de npm solo administra (habla con el servidor por su API); el servidor sale de install-release.sh.
 [ -x "$ROOT/runtime/bin/omniroute" ] || PATH="$ROOT/runtime/bin:$PATH" npm install -g --no-audit --no-fund --loglevel=error omniroute
 
+# Cloudflare AI Playground solo acepta un navegador real: Playwright fuera de la release, para que sobreviva a
+# las actualizaciones (Node lo encuentra subiendo desde /opt/hacksllm/releases/<version>).
+if [ ! -d "$ROOT/node_modules/playwright" ]; then
+  (cd "$ROOT"
+   [ -f package.json ] || echo '{"private":true}' > package.json
+   PATH="$ROOT/runtime/bin:$PATH" npm install --no-audit --no-fund --loglevel=error playwright@1.62.1
+   PATH="$ROOT/runtime/bin:$PATH" PLAYWRIGHT_BROWSERS_PATH="$ROOT/browsers" npx playwright install --with-deps chromium-headless-shell)
+  chown -R hacksllm:hacksllm "$ROOT/node_modules" "$ROOT/browsers" "$ROOT/package.json" "$ROOT/package-lock.json"
+fi
+
 install -m 755 "$HERE/hacksllm-cli" /usr/local/bin/hacksllm-cli
 install -m 644 "$HERE/hacksllm.service" /etc/systemd/system/hacksllm.service
 install -m 644 "$HERE/nginx.conf" /etc/nginx/sites-available/hacksllm

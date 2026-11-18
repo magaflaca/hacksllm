@@ -1,15 +1,12 @@
 #!/bin/bash
-# Configuracion inicial de OmniRoute: proveedor gratuito de OpenCode, combo con reservas y claves.
+# Configuracion de OmniRoute: proveedores sin clave, combos y claves de acceso.
 set -euo pipefail
-
-COMBO=deepseek-v4.1
-MODELS=opencode-zen/deepseek-v4.1-flash-free,opencode-zen/big-pickle,opencode-zen/mimo-v2.6-flash-free,opencode-zen/nemotron-3-ultra-free
+HERE="$(cd "$(dirname "$0")" && pwd)"
 
 hacksllm-cli providers list | grep -q opencode-zen ||
   hacksllm-cli providers add opencode-zen --name opencode-free --credential public --yes --default-model deepseek-v4.1-flash-free
 
-hacksllm-cli combo list | grep -q "$COMBO" ||
-  hacksllm-cli combo create "$COMBO" --strategy priority --models "$MODELS"
+(set -a && . /opt/hacksllm/env && /opt/hacksllm/runtime/bin/node "$HERE/models.mjs")
 
 for name in personal web; do
   file=/root/hacksllm-key-$name.txt

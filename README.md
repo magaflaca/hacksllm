@@ -1,11 +1,12 @@
 # hacksllm
 
-Gateway [OmniRoute](https://github.com/cheaper-inference/OmniRoute) con DeepSeek V4.1 gratis, expuesto como API
-compatible con OpenAI, y una web de chat en pixel art para probarlo.
+Gateway [OmniRoute](https://github.com/cheaper-inference/OmniRoute) con modelos grandes gratis y sin claves de
+proveedor (DeepSeek, GLM, Kimi, Nemotron, GPT, Claude), expuesto como API compatible con OpenAI, y una web de chat
+en pixel art para probarlo.
 
 - Web y API: https://llm.hacks.win
 - Base de la API: `https://llm.hacks.win/v1`
-- Modelo: `deepseek-v4.1`
+- Modelo por defecto: `deepseek-v4.1` (lista completa en `/v1/models`)
 
 ## Como funciona
 
@@ -16,26 +17,37 @@ navegador / tu PC                Cloudflare Pages                    VPS
                                                                  v
                                                         OmniRoute :20128 (systemd hacksllm)
                                                                  |
-                                                        relay Bun :20199 -> opencode.ai (capa gratuita)
+                                     +---------------------------+---------------+-----------------+
+                                     |                           |               |                 |
+                          relay Bun -> OpenCode     Chromium -> Cloudflare    DuckDuckGo     Kilo (anonimo)
+                                                    AI Playground             AI Chat
 ```
-
-`deepseek-v4.1` es un combo de OmniRoute con prioridad: primero `deepseek-v4.1-flash-free` y, si falla o se
-agota, `big-pickle`, `mimo-v2.6-flash-free` y `nemotron-3-ultra-free`, todos de la capa gratuita de OpenCode.
-La capa gratuita solo responde a Bun imitando al CLI de OpenCode; de eso se encarga el relay que trae OmniRoute
-desde la v3.8.54 y que el servidor arranca solo.
-
-### Sesiones y salidas
-
-- Cada conversacion tiene su propia sesion de OpenCode: OmniRoute la deriva del contenido de la conversacion
-  (o usa la `x-opencode-session` que mande el cliente) y cada peticion lleva un id nuevo.
-- Cada proxy de `deploy/proxies.mjs` es una conexion aparte. Si una salida falla, el router pasa a la siguiente
-  y la conversacion conserva su sesion; tras 3 fallos seguidos el proxy se retira (`PROXY_AUTO_DISABLE`).
-- Un 429 de la capa gratuita es cupo, no conectividad: hoy llega a la vez por todas las salidas con la misma
-  hora de reinicio, asi que cambiar de proxy no lo resuelve. Para seguir sirviendo hace falta un respaldo de
-  otro proveedor en el combo.
 
 La funcion de Pages reenvia `/v1/*` al origen. Las peticiones de la propia web sin clave usan la clave `web`
 (secreto `WEB_KEY` del proyecto de Pages); cualquier otro cliente necesita su propia clave.
+
+## Modelos
+
+Todos los proveedores son los que OmniRoute sabe usar sin clave ni cuenta:
+
+| proveedor | que aporta | como entra |
+|---|---|---|
+| OpenCode (capa gratuita) | DeepSeek V4.1, Big Pickle, MiMo (imagenes) | relay Bun que imita al CLI de OpenCode |
+| Cloudflare AI Playground | DeepSeek V4 Pro, GLM 5.2, Kimi K2.7, gpt-oss-120b | Chromium sin cabeza (Playwright) por WebSocket |
+| DuckDuckGo AI Chat | GPT-5.6 Luna, GPT-5.4 mini, Claude Haiku 4.5 | sesion anonima con su reto JS |
+| Kilo | Nemotron 3 Ultra 550B, Nemotron 3.5 VL (imagenes) | clave anonima de OpenRouter de Kilo |
+
+Pollinations, UncloseAI y AI Horde tambien figuran como gratuitos en OmniRoute, pero hoy los dos primeros piden
+clave y el tercero son modelos pequenos de voluntarios con colas de minutos, asi que no estan.
+
+Los modelos publicos son combos de prioridad definidos en `deploy/models.mjs`: `deepseek-v4.1`, `deepseek-v4-pro`,
+`glm-5.2`, `kimi-k2.7`, `nemotron-3-ultra`, `gpt-5.6-luna`, `claude-haiku-4.5` y `gpt-oss-120b`. Cada uno prueba
+primero su modelo y despues una reserva comun (GLM, Kimi, Nemotron, Big Pickle, modelos con vision...), asi que si
+una capa gratuita se agota o limita por IP la respuesta llega de otra. El campo `model` de la respuesta dice
+quien contesto. Las imagenes acaban en un modelo con vision de la reserva.
+
+Limites conocidos: la capa de OpenCode se agota a diario por IP; Cloudflare limita por minuto e ignora el prompt
+de sistema; DuckDuckGo limita rapido con rafagas.
 
 ## Usarlo desde tu PC
 
@@ -80,7 +92,8 @@ http://localhost:20128 (la contrasena inicial esta en `INITIAL_PASSWORD` de `/op
 deploy/
   setup.sh             preparacion unica: usuario, Node 24, Bun, CLI de OmniRoute, systemd, nginx
   install-release.sh   instala el servidor de una version publicada y cambia /opt/hacksllm/current
-  provision.sh         proveedor, combo y claves
+  provision.sh         proveedores, combos (models.mjs) y claves
+  models.mjs           combos publicos y su reserva comun
   hacksllm-cli         CLI de OmniRoute con el entorno del servicio
   omniroute.env        plantilla de /opt/hacksllm/env (setup.sh anade las claves nuevas sin tocar las existentes)
 functions/v1/          puente same-origin de Pages hacia el gateway
@@ -104,9 +117,9 @@ npm run deploy:web                  # build y despliegue en Cloudflare Pages
 ## Servidor
 
 ```bash
-deploy/setup.sh                  # una vez, como root
+deploy/setup.sh                  # una vez, como root (incluye Playwright y Chromium)
 deploy/install-release.sh 3.8.54 # y cada vez que salga una version nueva
-deploy/provision.sh
+deploy/provision.sh              # y cada vez que cambie deploy/models.mjs
 ```
 
 El servidor sale del paquete de escritorio de cada release de GitHub, que ya trae el build de Next compilado:

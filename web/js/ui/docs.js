@@ -52,7 +52,11 @@ console.log(reply.choices[0].message.content);`,
       "npm": "@ai-sdk/openai-compatible",
       "name": "hacksllm",
       "options": { "baseURL": "${API_BASE}", "apiKey": "${KEY}" },
-      "models": { "${DEFAULT_MODEL}": { "name": "DeepSeek V4.1" } }
+      "models": {
+        "${DEFAULT_MODEL}": { "name": "DeepSeek V4.1" },
+        "glm-5.2": { "name": "GLM 5.2" },
+        "kimi-k2.7": { "name": "Kimi K2.7" }
+      }
     }
   },
   "model": "hacksllm/${DEFAULT_MODEL}"
@@ -117,7 +121,11 @@ export function createDocs({ root }) {
       section('rutas', rows(['metodo', 'ruta', 'que hace'], ENDPOINTS)),
       section('cuerpo del chat', rows(['campo', 'tipo', 'notas'], PARAMS)),
       section('ejemplos', samples()),
-      section('modelos', modelList),
+      section(
+        'modelos',
+        h('p', {}, ...inline('cada modelo prueba primero el suyo y, si esta agotado u ocupado, pasa a otro bueno de la reserva; el campo `model` de la respuesta dice cual contesto.')),
+        modelList,
+      ),
       section(
         'errores',
         rows(

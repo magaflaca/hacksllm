@@ -13,8 +13,8 @@ Environment=PATH=/opt/hacksllm/runtime/bin:/opt/hacksllm/bun/bin:/usr/bin:/bin
 ExecStart=/opt/hacksllm/runtime/bin/node dev/run-standalone.mjs
 Restart=always
 RestartSec=3
-MemoryHigh=900M
-MemoryMax=1200M
+MemoryHigh=1600M
+MemoryMax=2000M
 Nice=5
 
 [Install]

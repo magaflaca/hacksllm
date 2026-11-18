@@ -2,7 +2,8 @@ import { store } from './store.js';
 
 export const API_BASE = `${location.origin}/v1`;
 export const DEFAULT_MODEL = 'deepseek-v4.1';
-const FREE_MODEL = /^opencode-zen\/(.+-free|big-pickle)$/;
+// Los combos (sin proveedor delante) son los modelos publicos; `auto` es interno de OmniRoute.
+const isPublic = (id) => !id.includes('/') && id !== 'auto';
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -26,7 +27,7 @@ export async function listModels() {
   const response = await fetch(`${API_BASE}/models`, { headers: headers() });
   if (!response.ok) throw await failure(response);
   const { data } = await response.json();
-  return data.map((model) => model.id).filter((id) => id === DEFAULT_MODEL || FREE_MODEL.test(id));
+  return data.map((model) => model.id).filter(isPublic);
 }
 
 async function* sseEvents(body) {
