@@ -22,7 +22,7 @@ navegador / tu PC                Cloudflare Pages                    VPS
 `deepseek-v4.1` es un combo de OmniRoute con prioridad: primero `deepseek-v4.1-flash-free` y, si falla o se
 agota, `big-pickle`, `mimo-v2.6-flash-free` y `nemotron-3-ultra-free`, todos de la capa gratuita de OpenCode.
 La capa gratuita solo responde a Bun imitando al CLI de OpenCode; de eso se encarga el relay que trae OmniRoute
-desde la v3.8.54.
+desde la v3.8.54 y que el servidor arranca solo.
 
 La funcion de Pages reenvia `/v1/*` al origen. Las peticiones de la propia web sin clave usan la clave `web`
 (secreto `WEB_KEY` del proyecto de Pages); cualquier otro cliente necesita su propia clave.
@@ -68,11 +68,11 @@ http://localhost:20128 (la contrasena inicial esta en `INITIAL_PASSWORD` de `/op
 
 ```
 deploy/
-  setup.sh             preparacion unica: usuario, Node 24, Bun, systemd, nginx, hacksllm-cli
-  build-omniroute.sh   compila OmniRoute desde una etiqueta de GitHub con swap temporal
-  upgrade.sh           instala OmniRoute (version de npm o .tgz local) y reinicia
+  setup.sh             preparacion unica: usuario, Node 24, Bun, CLI de OmniRoute, systemd, nginx
+  install-release.sh   instala el servidor de una version publicada y cambia /opt/hacksllm/current
   provision.sh         proveedor, combo y claves
-  omniroute.env        plantilla de /opt/hacksllm/env
+  hacksllm-cli         CLI de OmniRoute con el entorno del servicio
+  omniroute.env        plantilla de /opt/hacksllm/env (setup.sh anade las claves nuevas sin tocar las existentes)
 functions/v1/          puente same-origin de Pages hacia el gateway
 scripts/               build de la web y servidor de desarrollo
 web/
