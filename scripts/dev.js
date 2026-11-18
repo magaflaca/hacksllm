@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Servidor de desarrollo: sirve web/ tal cual y reenvia /v1 al gateway (DEV_API, por defecto produccion).
+// Servidor de desarrollo: sirve web/ tal cual y reenvia /v1 y /work al servidor (DEV_API, por defecto produccion).
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -21,7 +21,7 @@ async function proxy(request, response) {
 }
 
 createServer(async (request, response) => {
-  if (request.url.startsWith('/v1/')) return proxy(request, response).catch(() => response.end());
+  if (/^\/(v1|work)\//.test(request.url)) return proxy(request, response).catch(() => response.end());
   const relative = path.normalize(decodeURIComponent(request.url.split('?')[0])).replace(/^[/\\]+/, '');
   const file = path.join(root, relative || 'index.html');
   if (!file.startsWith(root)) return response.writeHead(403).end();

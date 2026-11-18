@@ -1,0 +1,19 @@
+[Unit]
+Description=bichi work: API del agente de hacksllm
+After=network-online.target hacksllm.service
+
+[Service]
+Type=simple
+User=hacksllm
+Group=hacksllm
+WorkingDirectory=/opt/hacksllm/work
+ExecStart=/opt/hacksllm/runtime/bin/node server.mjs
+Environment=NODE_ENV=production
+Environment=WORK_PORT=20130
+Environment=WORK_CONCURRENCY=1
+Restart=always
+RestartSec=3
+MemoryMax=300M
+
+[Install]
+WantedBy=multi-user.target

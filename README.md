@@ -49,6 +49,31 @@ quien contesto. Las imagenes acaban en un modelo con vision de la reserva.
 Limites conocidos: la capa de OpenCode se agota a diario por IP; Cloudflare limita por minuto e ignora el prompt
 de sistema; DuckDuckGo limita rapido con rafagas.
 
+## bichi work
+
+El tab `work` es un agente con espacio de trabajo propio: subes archivos, ejecuta codigo e instala dependencias
+en el VPS y entrega los resultados como archivos (y un .zip con todo). Solo funciona con una clave de la API: la
+funcion `functions/work` no pone la clave web.
+
+```
+web (#/work) -> Pages /work/* -> nginx /work/ -> hacksllm-work :20130 (usuario hacksllm)
+                                                    |  sudo bichi-run (unico paso con root)
+                                                    v
+                                     systemd-run como hacksllm-work, sandbox por sesion
+                                     agy  ->  agy (respaldo)  ->  opencode + OmniRoute
+```
+
+- Una sesion por visita (se guarda en `sessionStorage`), ligada al hash de la clave que la creo. El espacio vive
+  en `/srv/hacksllm-work/ws/<id>` y se borra tras 6 h sin uso.
+- El sandbox solo ve su propia sesion: sin `/root`, `/opt`, `/home`, `/var/lib` ni las demas sesiones, con
+  1.2 GB de RAM, 2 CPU, 25 min por turno y sin sudo. Puede instalar con pip `--user`, uv, venv o npm.
+- Motores en orden: agy con el esfuerzo elegido (rapido, normal, a fondo), el respaldo de agy, y opencode contra
+  el combo `nemotron-3-ultra` de OmniRoute con la clave `work`. Un motor que falla por cupo descansa 30 min.
+  La web nunca muestra que modelo trabajo.
+- Un turno a la vez (`WORK_CONCURRENCY`); los demas esperan en cola.
+- El agente necesita la sesion de Google de agy, asi que quien tenga una clave podria leerla desde su espacio:
+  reparte claves solo a gente de confianza.
+
 ## Usarlo desde tu PC
 
 ```bash
@@ -96,12 +121,16 @@ deploy/
   models.mjs           combos publicos y su reserva comun
   hacksllm-cli         CLI de OmniRoute con el entorno del servicio
   omniroute.env        plantilla de /opt/hacksllm/env (setup.sh anade las claves nuevas sin tocar las existentes)
-functions/v1/          puente same-origin de Pages hacia el gateway
+  setup-work.sh        bichi work: usuario aislado, agy, opencode, sudoers, servicio
+  bichi-run            lanza el agente en el sandbox (root, via sudo)
+functions/             puentes same-origin de Pages: v1 (gateway) y work (agente)
+lib/origin.js          reenvio comun de esos puentes
+work/                  API de bichi work: sesiones, cola y motores
 scripts/               build de la web y servidor de desarrollo
 web/
   js/art/              sprites pixel a pixel: bichi, iconos, cursores, estanque
   js/core/             almacen, sonido, tema, cliente de la API, historial
-  js/ui/               chat, markdown, pagina de la API, mascota
+  js/ui/               chat, work, markdown, pagina de la API, mascota
   css/                 tokens, base, cabecera, chat, documentacion
 ```
 
@@ -120,6 +149,7 @@ npm run deploy:web                  # build y despliegue en Cloudflare Pages
 deploy/setup.sh                  # una vez, como root (incluye Playwright y Chromium)
 deploy/install-release.sh 3.8.54 # y cada vez que salga una version nueva
 deploy/provision.sh              # y cada vez que cambie deploy/models.mjs
+deploy/setup-work.sh             # bichi work; repetirlo actualiza work/ en el servidor
 ```
 
 El servidor sale del paquete de escritorio de cada release de GitHub, que ya trae el build de Next compilado:

@@ -12,25 +12,25 @@ export class ApiError extends Error {
   }
 }
 
-const headers = () => {
+export const authHeaders = () => {
   const key = store.get('apiKey', '');
   return { 'Content-Type': 'application/json', ...(key && { Authorization: `Bearer ${key}` }) };
 };
 
-async function failure(response) {
+export async function failure(response) {
   const body = await response.json().catch(() => null);
   const message = body?.error?.message ?? body?.message ?? response.statusText;
   return new ApiError(response.status, typeof message === 'string' ? message : JSON.stringify(message));
 }
 
 export async function listModels() {
-  const response = await fetch(`${API_BASE}/models`, { headers: headers() });
+  const response = await fetch(`${API_BASE}/models`, { headers: authHeaders() });
   if (!response.ok) throw await failure(response);
   const { data } = await response.json();
   return data.map((model) => model.id).filter(isPublic);
 }
 
-async function* sseEvents(body) {
+export async function* sseEvents(body) {
   const reader = body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = '';
   for (;;) {
@@ -58,7 +58,7 @@ async function* sseEvents(body) {
 export async function* streamChat({ model, messages, signal }) {
   const response = await fetch(`${API_BASE}/chat/completions`, {
     method: 'POST',
-    headers: headers(),
+    headers: authHeaders(),
     body: JSON.stringify({ model, messages, stream: true }),
     signal,
   });

@@ -8,10 +8,11 @@ import { theme } from './core/theme.js';
 import { createMascot } from './ui/mascot.js';
 import { createChat } from './ui/chat.js';
 import { createDocs } from './ui/docs.js';
+import { createWork } from './ui/work.js';
 
 const $ = (selector) => document.querySelector(selector);
 const action = (name) => document.querySelectorAll(`[data-action="${name}"]`);
-const VIEWS = { chat: '#/', docs: '#/api' };
+const VIEWS = { chat: '#/', work: '#/work', docs: '#/api' };
 
 installCursors();
 mountIcons();
@@ -30,18 +31,23 @@ const openKey = () => {
 
 const chatView = $('#view-chat');
 const chat = createChat({ root: chatView, mascot, openKey });
+const workView = $('#view-work');
+const workspace = createWork({ root: workView, mascot, openKey });
 const docs = createDocs({ root: $('#view-docs') });
+const perch = $('.perch');
 
-const setDrawer = (open) => chatView.classList.toggle('drawer-open', open);
-chatView.addEventListener('chat:opened', () => setDrawer(false));
+const activeView = () => document.querySelector('[data-view-panel]:not([hidden])');
+const setDrawer = (open) => activeView()?.classList.toggle('drawer-open', open);
+[chatView, workView].forEach((view) => view.addEventListener('chat:opened', () => setDrawer(false)));
 
 function showView(name) {
+  setDrawer(false);
   for (const panel of document.querySelectorAll('[data-view-panel]')) panel.hidden = panel.dataset.viewPanel !== name;
   for (const tab of document.querySelectorAll('[data-view]')) tab.setAttribute('aria-selected', tab.dataset.view === name);
   document.body.dataset.view = name;
-  setDrawer(false);
+  activeView().querySelector('.composer')?.prepend(perch);
 }
-const viewFromHash = () => (location.hash === VIEWS.docs ? 'docs' : 'chat');
+const viewFromHash = () => Object.keys(VIEWS).find((name) => VIEWS[name] === location.hash) ?? 'chat';
 
 document.querySelectorAll('[data-view]').forEach((tab) =>
   tab.addEventListener('click', () => {
@@ -70,7 +76,7 @@ action('theme').forEach((button) =>
     mascot.say(theme.current === 'dark' ? 'buenas noches' : 'buenos dias', 1800);
   }),
 );
-action('drawer').forEach((button) => button.addEventListener('click', () => (setDrawer(!chatView.classList.contains('drawer-open')), sound.play('tap'))));
+action('drawer').forEach((button) => button.addEventListener('click', () => (setDrawer(!activeView().classList.contains('drawer-open')), sound.play('tap'))));
 action('new').forEach((button) => button.addEventListener('click', chat.startNew));
 action('key').forEach((button) => button.addEventListener('click', openKey));
 
@@ -81,6 +87,7 @@ keyDialog.addEventListener('close', () => {
   mascot.say(keyDialog.returnValue === 'save' ? 'clave guardada' : 'clave quitada', 1800);
   chat.refreshModels();
   docs.refresh();
+  workspace.refresh();
 });
 keyDialog.addEventListener('click', (event) => event.target === keyDialog && keyDialog.close());
 

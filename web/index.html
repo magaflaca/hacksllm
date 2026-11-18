@@ -29,6 +29,7 @@
       <a class="brand" href="/" aria-label="hacksllm">hacks<b>llm</b></a>
       <nav class="tabs px" role="tablist" aria-label="Secciones">
         <button class="tab" type="button" role="tab" data-view="chat"><span data-icon="chat"></span>chat</button>
+        <button class="tab" type="button" role="tab" data-view="work"><span data-icon="work"></span>work</button>
         <button class="tab" type="button" role="tab" data-view="docs"><span data-icon="book"></span>api</button>
       </nav>
       <div class="top-actions">
@@ -65,6 +66,37 @@
               </label>
               <span class="hint only-wide">enter envia, shift+enter salta linea</span>
               <button class="send px" id="send" type="submit" aria-label="Enviar" data-icon="send"></button>
+            </div>
+          </form>
+        </section>
+      </section>
+
+      <section class="view chat-view work-view" id="view-work" data-view-panel="work" hidden>
+        <div class="scrim" data-action="drawer"></div>
+        <aside class="sidebar card px" aria-label="Archivos de la sesion">
+          <button class="primary px" type="button" data-action="work-new"><span data-icon="plus"></span>nueva sesion</button>
+          <p class="label">archivos</p>
+          <ul class="chat-list file-list" id="work-files"></ul>
+          <button class="ghost px" type="button" data-action="work-zip" disabled><span data-icon="download"></span>todo en .zip</button>
+          <p class="sidebar-note">espacio privado de esta visita; se borra tras 6 h sin uso</p>
+        </aside>
+
+        <section class="talk card px" aria-label="Trabajo">
+          <div class="thread" id="work-thread" aria-live="polite"></div>
+          <form class="composer" id="work-composer" novalidate>
+            <div class="attachments" id="work-attachments" hidden></div>
+            <label class="sr-only" for="work-prompt">tarea</label>
+            <textarea class="input px" id="work-prompt" rows="1" placeholder="que construimos?" enterkeyhint="send"></textarea>
+            <div class="composer-bar">
+              <input type="file" id="work-file" multiple hidden />
+              <button class="icon-btn px attach" type="button" aria-label="Subir archivos" title="Subir archivos" data-icon="upload" data-action="work-attach"></button>
+              <label class="model px">
+                <span class="sr-only">esfuerzo</span>
+                <select id="work-effort"></select>
+                <span data-icon="chevron"></span>
+              </label>
+              <span class="hint only-wide">arrastra archivos aqui</span>
+              <button class="send px" id="work-send" type="submit" aria-label="Enviar" data-icon="send"></button>
             </div>
           </form>
         </section>

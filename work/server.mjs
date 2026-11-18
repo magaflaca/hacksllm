@@ -1,0 +1,237 @@
+// API de bichi work, detras de nginx en /work/. Solo con una clave valida de OmniRoute.
+import http from 'node:http';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import { ENGINES, available, rest, runEngine } from './engines.mjs';
+import * as sessions from './sessions.mjs';
+
+const PORT = Number(process.env.WORK_PORT ?? 20130);
+const GATEWAY = process.env.WORK_GATEWAY ?? 'http://127.0.0.1:20128';
+const CONCURRENCY = Number(process.env.WORK_CONCURRENCY ?? 1);
+const MAX_UPLOAD = 100 * 1024 * 1024;
+const MAX_SPACE = 1024 * 1024 * 1024;
+const MAX_PROMPT = 60_000;
+const EFFORTS = new Set(['low', 'medium', 'high']);
+const HISTORY_TURNS = 6;
+
+const PREAMBLE = `[bichi work]
+Eres bichi, el agente de trabajo de hacksllm. Trabajas en el directorio actual, que es el espacio privado de esta
+sesion; los archivos que sube el usuario estan aqui. Puedes ejecutar codigo e instalar dependencias sin root
+(pip install --user, uv, npm en el proyecto, venv). No hay sudo ni apt.
+Cuando el usuario pida algo entregable, dejalo como archivos en este directorio y, si son varios, empaquetalos
+tambien en un .zip. Nombra cada entregable por su ruta relativa (por ejemplo \`web/index.html\`) sin rutas absolutas.
+Responde en el idioma del usuario, claro y breve. No digas que modelo, proveedor ni herramienta interna eres:
+si te lo preguntan, eres bichi, de hacksllm.`;
+
+// ---- auth
+
+const validKeys = new Map();
+async function authorize(req) {
+  const key = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim();
+  if (!key) return null;
+  const owner = sessions.ownerOf(key);
+  if ((validKeys.get(owner) ?? 0) > Date.now()) return owner;
+  const response = await fetch(`${GATEWAY}/v1/models`, { headers: { authorization: `Bearer ${key}` } }).catch(() => null);
+  if (!response?.ok) return null;
+  validKeys.set(owner, Date.now() + 10 * 60_000);
+  return owner;
+}
+
+// ---- cola
+
+let running = 0;
+const waiting = [];
+const acquire = (onQueued) =>
+  new Promise((resolve) => {
+    if (running < CONCURRENCY) return (running++, resolve());
+    waiting.push(resolve);
+    onQueued(waiting.length);
+  });
+const release = () => (waiting.length ? waiting.shift()() : running--);
+
+const active = new Map();
+
+// ---- respuestas
+
+const send = (res, status, body) => {
+  res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+  res.end(JSON.stringify(body));
+};
+const fail = (res, status, message) => send(res, status, { error: { message } });
+
+async function readJson(req, limit = MAX_PROMPT * 2) {
+  let raw = '';
+  for await (const chunk of req) {
+    raw += chunk;
+    if (raw.length > limit) throw new Error('cuerpo demasiado grande');
+  }
+  return JSON.parse(raw || '{}');
+}
+
+const tidy = (id, text) =>
+  text
+    .replaceAll(`file://${sessions.workspace(id)}/`, '')
+    .replaceAll(`${sessions.workspace(id)}/`, '')
+    .replaceAll(sessions.workspace(id), '.')
+    .replaceAll('/srv/hacksllm-work', '~');
+
+function buildPrompt(session, message, uploads, fresh) {
+  const parts = [PREAMBLE];
+  if (fresh && session.history.length) {
+    const recent = session.history.slice(-HISTORY_TURNS).map(({ role, text }) => `${role === 'user' ? 'usuario' : 'bichi'}: ${text}`);
+    parts.push(`[conversacion previa de esta sesion]\n${recent.join('\n\n')}`);
+  }
+  if (uploads.length) parts.push(`[archivos nuevos del usuario]\n${uploads.map((name) => `- ${name}`).join('\n')}`);
+  parts.push(`[mensaje del usuario]\n${message}`);
+  return parts.join('\n\n').slice(-MAX_PROMPT);
+}
+
+// ---- turno
+
+async function run(req, res, session) {
+  const { message = '', effort = 'medium', uploads = [] } = await readJson(req);
+  if (!message.trim()) return fail(res, 400, 'mensaje vacio');
+  if (session.busy && Date.now() - session.busy < 30 * 60_000) return fail(res, 409, 'esta sesion ya esta trabajando');
+
+  res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', 'x-accel-buffering': 'no' });
+  const emit = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`);
+  const ping = setInterval(() => res.write(': ping\n\n'), 15_000);
+  const controller = new AbortController();
+  active.set(session.id, controller);
+  res.on('close', () => controller.abort());
+
+  session.busy = Date.now();
+  await sessions.save(session);
+  await acquire((position) => emit({ type: 'status', text: `en cola, ${position} por delante` }));
+  const before = await sessions.listFiles(session.id);
+  let answer = '';
+  try {
+    emit({ type: 'status', text: 'trabajando' });
+    const engines = available();
+    const queue = session.engine ? [...engines.filter((e) => e.key === session.engine), ...engines.filter((e) => e.key !== session.engine)] : engines;
+    let done = false;
+    for (const [index, engine] of queue.entries()) {
+      if (controller.signal.aborted) break;
+      if (index) emit({ type: 'status', text: 'sigo por otro camino' });
+      const resume = session.resume[engine.key];
+      const prompt = buildPrompt(session, message, Array.isArray(uploads) ? uploads.map(String).slice(0, 50) : [], !resume || index > 0);
+      const result = await runEngine(engine, {
+        session: session.id,
+        effort: EFFORTS.has(effort) ? effort : 'medium',
+        resume,
+        prompt,
+        signal: controller.signal,
+        onEvent: (event) => {
+          if (event.type === 'resume') session.resume[engine.key] = event.id;
+          else if (event.type === 'text') emit({ type: 'text', delta: tidy(session.id, event.delta) });
+          else emit({ ...event, label: tidy(session.id, event.label).slice(0, 160) });
+        },
+      });
+      if (result.ok) {
+        session.engine = engine.key;
+        answer = tidy(session.id, result.final);
+        done = true;
+        break;
+      }
+      if (controller.signal.aborted) break;
+      console.warn(`[work] ${engine.key} fallo: ${result.reason.slice(0, 300)}`);
+      rest(engine, result.quota);
+      delete session.resume[engine.key];
+    }
+    const files = sessions.changedSince(before, await sessions.listFiles(session.id));
+    if (files.length) emit({ type: 'files', files });
+    if (done) emit({ type: 'done', text: answer });
+    else if (!controller.signal.aborted) emit({ type: 'error', message: 'ahora mismo no pude terminar el trabajo, prueba en un rato' });
+  } finally {
+    release();
+    clearInterval(ping);
+    active.delete(session.id);
+    session.history.push({ role: 'user', text: message.slice(0, 2000) }, { role: 'assistant', text: (answer || '(sin terminar)').slice(0, 2000) });
+    session.history = session.history.slice(-HISTORY_TURNS * 2);
+    session.busy = 0;
+    await sessions.save(session);
+    res.end();
+  }
+}
+
+async function upload(req, res, session, name) {
+  const clean = path.basename(decodeURIComponent(name)).replace(/[^\w.\- ()À-ɏ]/g, '_').slice(0, 120);
+  const target = clean && sessions.resolveInside(session.id, clean);
+  if (!target || clean.startsWith('.')) return fail(res, 400, 'nombre de archivo invalido');
+  const length = Number(req.headers['content-length'] ?? 0);
+  if (length > MAX_UPLOAD) return fail(res, 413, 'el archivo pasa de 100 MB');
+  if (sessions.totalSize(await sessions.listFiles(session.id)) + length > MAX_SPACE) return fail(res, 413, 'el espacio de la sesion esta lleno (1 GB)');
+  let received = 0;
+  req.on('data', (chunk) => {
+    received += chunk.length;
+    if (received > MAX_UPLOAD) req.destroy(new Error('demasiado grande'));
+  });
+  await pipeline(req, createWriteStream(target, { mode: 0o664 }));
+  send(res, 201, { path: clean, size: received });
+}
+
+async function download(res, session, relative) {
+  const target = sessions.resolveInside(session.id, decodeURIComponent(relative));
+  const file = target && (await sessions.listFiles(session.id)).find((item) => sessions.resolveInside(session.id, item.path) === target);
+  if (!file) return fail(res, 404, 'no existe');
+  res.writeHead(200, {
+    'content-type': 'application/octet-stream',
+    'content-length': file.size,
+    'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(file.path))}`,
+    'cache-control': 'no-store',
+  });
+  createReadStream(target).pipe(res);
+}
+
+function zip(res, session) {
+  res.writeHead(200, {
+    'content-type': 'application/zip',
+    'content-disposition': 'attachment; filename="bichi-work.zip"',
+    'cache-control': 'no-store',
+  });
+  const child = spawn('zip', ['-r', '-q', '-', '.', '-x', '.*', '*/.*', '*/node_modules/*', 'node_modules/*', '*/.venv/*', '.venv/*', '*/__pycache__/*'], {
+    cwd: sessions.workspace(session.id),
+  });
+  child.stdout.pipe(res);
+  res.on('close', () => child.kill());
+}
+
+// ---- rutas
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const url = new URL(req.url, 'http://local');
+    const [, scope, collection, id, resource, ...rest] = url.pathname.split('/');
+    if (scope !== 'work' || collection !== 'sessions') return fail(res, 404, 'no existe');
+    const owner = await authorize(req);
+    if (!owner) return fail(res, 401, 'hace falta una clave de la API valida');
+
+    if (!id && req.method === 'POST') {
+      const session = await sessions.create(owner);
+      return send(res, 201, { id: session.id });
+    }
+    const session = await sessions.load(id);
+    if (!session || session.owner !== owner) return fail(res, 404, 'la sesion ya no existe');
+
+    if (!resource && req.method === 'GET') return send(res, 200, { id: session.id, busy: Boolean(session.busy), files: await sessions.listFiles(session.id) });
+    if (!resource && req.method === 'DELETE') return (await sessions.destroy(session.id), send(res, 200, { ok: true }));
+    if (resource === 'run' && req.method === 'POST') return await run(req, res, session);
+    if (resource === 'stop' && req.method === 'POST') return (active.get(session.id)?.abort(), send(res, 200, { ok: true }));
+    if (resource === 'zip' && req.method === 'GET') return zip(res, session);
+    if (resource === 'files' && !rest.length && req.method === 'GET') return send(res, 200, { files: await sessions.listFiles(session.id) });
+    if (resource === 'files' && rest.length && req.method === 'PUT') return await upload(req, res, session, rest.join('/'));
+    if (resource === 'files' && rest.length && req.method === 'GET') return await download(res, session, rest.join('/'));
+    fail(res, 404, 'no existe');
+  } catch (error) {
+    console.error('[work]', error);
+    if (!res.headersSent) fail(res, 500, 'error interno');
+    else res.end();
+  }
+});
+
+server.requestTimeout = 0;
+server.listen(PORT, '127.0.0.1', () => console.log(`[work] escuchando en ${PORT}, motores: ${ENGINES.map((e) => e.key).join(' > ')}`));
+setInterval(() => sessions.sweep().catch((error) => console.error('[work] limpieza', error)), 10 * 60_000);

@@ -1,0 +1,261 @@
+/* archivos de la sesion */
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 8px;
+  transition: background-color 0.15s steps(3);
+}
+
+.file-item:hover {
+  background: var(--surface-2);
+}
+
+.file-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  padding: 7px 10px;
+  font-size: 15px;
+}
+
+.file-open span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-open .icon,
+.file-card .icon,
+.chip .icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--sky-deep);
+}
+
+.file-size {
+  font-size: 13px;
+  color: var(--ink-soft);
+  flex: none;
+}
+
+.ghost:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* adjuntos */
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.attachments[hidden] {
+  display: none;
+}
+
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 4px 6px 4px 10px;
+  font-size: 14px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip[data-state='error'] {
+  background: var(--danger);
+  color: var(--on-accent);
+}
+
+.chip[data-state='error'] .icon {
+  color: inherit;
+}
+
+.chip-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: var(--px);
+  width: var(--done);
+  background: var(--sky-deep);
+  transition: width 0.2s steps(4);
+}
+
+.chip-x {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 5px;
+  color: var(--ink-soft);
+}
+
+.chip-x:hover {
+  color: var(--ink);
+}
+
+.attach {
+  flex: none;
+}
+
+.msg-uploads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.msg-uploads .chip {
+  padding-right: 10px;
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.welcome-actions {
+  display: flex;
+  margin-top: 10px;
+}
+
+.welcome-actions .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* pasos del agente */
+
+.steps[open] summary .icon:first-child {
+  animation: twinkle 1.2s steps(4) infinite;
+}
+
+.step-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0 0 0 14px;
+  box-shadow: inset var(--px) 0 0 var(--shadow);
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+  animation: rise 0.25s steps(3) both;
+}
+
+.step .icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--sky-deep);
+}
+
+.step[data-state='active'] .icon {
+  animation: blip 0.9s steps(2) infinite;
+}
+
+.step[data-state='failed'] .icon {
+  color: var(--danger);
+}
+
+.step-verb {
+  flex: none;
+  color: var(--ink);
+}
+
+.step code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  -webkit-font-smoothing: auto;
+}
+
+@keyframes twinkle {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* entregables */
+
+.deliverables {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr));
+  gap: 12px;
+  padding-top: 6px;
+}
+
+.file-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--surface);
+  text-align: left;
+  transition: background-color 0.15s steps(3), transform 0.08s steps(2);
+}
+
+.file-card .file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.file-card .icon:last-child {
+  color: var(--ink-soft);
+}
+
+.file-card.is-zip {
+  background: var(--mint);
+  color: var(--on-accent);
+}
+
+.file-card.is-zip .icon {
+  color: inherit;
+}
+
+@media (hover: hover) {
+  .file-card:hover {
+    background: var(--butter);
+    color: var(--on-accent);
+  }
+}
+
+.file-card:active {
+  transform: translateY(calc(var(--px) * 2));
+}
+
+/* soltar archivos */
+
+.work-view.is-dropping .talk {
+  --line: var(--sky-deep);
+  background: var(--surface-2);
+}
