@@ -157,9 +157,11 @@
   transition: background-color 0.15s steps(3), transform 0.08s steps(2);
 }
 
-.suggestion:hover {
-  background: var(--mint);
-  color: var(--on-accent);
+@media (hover: hover) {
+  .suggestion:hover {
+    background: var(--mint);
+    color: var(--on-accent);
+  }
 }
 
 .msg {
@@ -430,6 +432,7 @@
   background: var(--surface);
   box-shadow: 0 calc(var(--px) * -1) 0 var(--surface-2);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -459,7 +462,7 @@
   align-items: center;
   background: var(--bg);
   min-width: 0;
-  max-width: 62%;
+  max-width: min(62%, 300px);
   --shadow: transparent;
 }
 
@@ -471,7 +474,7 @@
   font-size: 15px;
   font-weight: 600;
   min-width: 0;
-  max-width: 100%;
+  width: 100%;
   text-overflow: ellipsis;
 }
 
@@ -512,8 +515,10 @@
   margin-left: 0;
 }
 
-.send:hover {
-  background: var(--butter);
+@media (hover: hover) {
+  .send:hover {
+    background: var(--butter);
+  }
 }
 
 .send.is-stop {

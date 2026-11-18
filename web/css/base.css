@@ -176,16 +176,20 @@ a {
   color: var(--on-accent);
 }
 
-.primary:hover {
-  background: var(--butter);
+@media (hover: hover) {
+  .primary:hover {
+    background: var(--butter);
+  }
 }
 
 .ghost {
   background: var(--surface);
 }
 
-.ghost:hover {
-  background: var(--surface-2);
+@media (hover: hover) {
+  .ghost:hover {
+    background: var(--surface-2);
+  }
 }
 
 .primary [data-icon],
@@ -206,9 +210,11 @@ a {
   transition: transform 0.08s steps(2), background-color 0.2s steps(3);
 }
 
-.icon-btn:hover {
-  background: var(--butter);
-  color: var(--on-accent);
+@media (hover: hover) {
+  .icon-btn:hover {
+    background: var(--butter);
+    color: var(--on-accent);
+  }
 }
 
 @keyframes rise {
