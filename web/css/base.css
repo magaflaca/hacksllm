@@ -1,0 +1,236 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  cursor: var(--cursor-arrow, auto);
+  -webkit-text-size-adjust: 100%;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font: 500 17px/1.5 var(--font);
+  -webkit-font-smoothing: none;
+  display: flex;
+  flex-direction: column;
+  transition: background-color 0.3s steps(4), color 0.3s steps(4);
+}
+
+a,
+button,
+summary,
+select,
+label.model {
+  cursor: var(--cursor-pointer, pointer);
+}
+
+textarea,
+input {
+  cursor: var(--cursor-text, text);
+}
+
+button,
+textarea,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 0;
+  background: none;
+  padding: 0;
+}
+
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--sky-deep);
+  text-underline-offset: 3px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:focus-visible {
+  outline: var(--px) dashed var(--sky-deep);
+  outline-offset: calc(var(--px) * 2);
+}
+
+::selection {
+  background: var(--sky);
+  color: var(--on-accent);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+#pond {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  image-rendering: pixelated;
+}
+
+.icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+/* Borde pixelado: cuatro sombras duras dibujan el contorno con esquinas recortadas
+   y tres mas la sombra inferior. Sin radios ni desenfoques. */
+.px {
+  box-shadow:
+    0 calc(var(--px) * -1) 0 0 var(--line),
+    0 var(--px) 0 0 var(--line),
+    calc(var(--px) * -1) 0 0 0 var(--line),
+    var(--px) 0 0 0 var(--line),
+    0 calc(var(--px) * 3) 0 0 var(--shadow),
+    calc(var(--px) * -1) calc(var(--px) * 2) 0 0 var(--shadow),
+    var(--px) calc(var(--px) * 2) 0 0 var(--shadow);
+}
+
+.press:active,
+.icon-btn:active,
+.primary:active,
+.ghost:active,
+.send:active,
+.suggestion:active {
+  transform: translateY(calc(var(--px) * 2));
+  box-shadow:
+    0 calc(var(--px) * -1) 0 0 var(--line),
+    0 var(--px) 0 0 var(--line),
+    calc(var(--px) * -1) 0 0 0 var(--line),
+    var(--px) 0 0 0 var(--line);
+}
+
+.card {
+  background: var(--surface);
+  transition: background-color 0.3s steps(4);
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  letter-spacing: 0.5px;
+}
+
+.input {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: var(--bg);
+  padding: 12px 14px;
+  line-height: 1.45;
+  --shadow: transparent;
+  transition: background-color 0.3s steps(4);
+}
+
+.input::placeholder {
+  color: var(--ink-soft);
+  opacity: 0.8;
+}
+
+.input:focus {
+  outline: 0;
+  --line: var(--sky-deep);
+}
+
+.primary,
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 9px 16px;
+  font-weight: 600;
+  transition: background-color 0.15s steps(3), transform 0.08s steps(2);
+}
+
+.primary {
+  background: var(--sky);
+  color: var(--on-accent);
+}
+
+.primary:hover {
+  background: var(--butter);
+}
+
+.ghost {
+  background: var(--surface);
+}
+
+.ghost:hover {
+  background: var(--surface-2);
+}
+
+.primary [data-icon],
+.ghost [data-icon] {
+  width: 16px;
+  height: 16px;
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  flex: none;
+  transition: transform 0.08s steps(2), background-color 0.2s steps(3);
+}
+
+.icon-btn:hover {
+  background: var(--butter);
+  color: var(--on-accent);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

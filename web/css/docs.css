@@ -1,0 +1,117 @@
+.docs-view {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: calc(var(--px) * 2) var(--px) 24px;
+}
+
+.docs {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: clamp(20px, 4vw, 40px);
+  display: grid;
+  gap: 34px;
+}
+
+.docs-head {
+  display: grid;
+  gap: 8px;
+}
+
+.docs-head h2 {
+  font-size: 34px;
+  line-height: 1;
+  color: var(--sky-deep);
+}
+
+.docs-head p,
+.doc-section > p,
+.doc-note {
+  color: var(--ink-soft);
+}
+
+.docs code,
+.docs td code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: var(--surface-2);
+  padding: 1px 6px;
+  -webkit-font-smoothing: auto;
+}
+
+.docs .code code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.doc-section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.doc-section h3 {
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.doc-section h3::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: var(--sky-deep);
+  box-shadow: 4px 4px 0 var(--blush);
+}
+
+.doc-section .code,
+.doc-section .table-wrap {
+  margin-top: 0;
+}
+
+.sample-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.sample-tab {
+  padding: 4px 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--bg);
+  transition: background-color 0.15s steps(3), color 0.15s steps(3);
+}
+
+.sample-tab:hover {
+  color: var(--ink);
+}
+
+.sample-tab[aria-selected='true'] {
+  background: var(--sky);
+  color: var(--on-accent);
+}
+
+.sample-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.model-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.model-list li {
+  color: var(--ink-soft);
+}

@@ -1,0 +1,42 @@
+:root {
+  --px: 3px;
+  --font: 'Pixelify Sans', ui-monospace, 'Courier New', monospace;
+  --mono: ui-monospace, 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+  --gutter: 16px;
+
+  --bg: #f3eefb;
+  --surface: #fdfbff;
+  --surface-2: #eaf2fd;
+  --ink: #34395e;
+  --ink-soft: #7f86aa;
+  --line: #34395e;
+  --shadow: #d6d8f0;
+  --sky: #a9d4f7;
+  --sky-deep: #5f9be0;
+  --mint: #c4ebd9;
+  --butter: #fbe9ab;
+  --blush: #f6c3d6;
+  --danger: #f4a3a0;
+  --on-accent: #262a4d;
+  --code-bg: #f1f5fd;
+  --veil: rgb(52 57 94 / 0.4);
+}
+
+:root[data-theme='dark'] {
+  --bg: #12132b;
+  --surface: #1c1e3c;
+  --surface-2: #252a4f;
+  --ink: #e6e9ff;
+  --ink-soft: #9aa1cc;
+  --line: #07081a;
+  --shadow: #090a1d;
+  --sky: #7fb8f0;
+  --sky-deep: #a6d2ff;
+  --mint: #7fd1b0;
+  --butter: #f3dd8f;
+  --blush: #f39ac0;
+  --danger: #f08a8a;
+  --on-accent: #12132b;
+  --code-bg: #14162f;
+  --veil: rgb(4 5 16 / 0.7);
+}
