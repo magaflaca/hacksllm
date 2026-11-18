@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <title>hacksllm</title>
+    <meta name="description" content="Chat y API compatible con OpenAI para DeepSeek V4.1, servida por OmniRoute." />
+    <meta name="theme-color" content="#f3eefb" />
+    <link rel="icon" href="data:," id="favicon" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/css/main.css" />
+    <script>
+      document.documentElement.dataset.theme =
+        JSON.parse(localStorage.getItem('hacksllm:theme') ?? 'null') ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    </script>
+  </head>
+  <body>
+    <canvas id="pond" aria-hidden="true"></canvas>
+
+    <header class="top">
+      <button class="icon-btn px only-narrow" type="button" aria-label="Historial" data-icon="menu" data-action="drawer"></button>
+      <a class="brand" href="/" aria-label="hacksllm">hacks<b>llm</b></a>
+      <nav class="tabs px" role="tablist" aria-label="Secciones">
+        <button class="tab" type="button" role="tab" data-view="chat"><span data-icon="chat"></span>chat</button>
+        <button class="tab" type="button" role="tab" data-view="docs"><span data-icon="book"></span>api</button>
+      </nav>
+      <div class="top-actions">
+        <button class="icon-btn px" type="button" aria-label="Clave de la API" title="Clave de la API" data-icon="key" data-action="key"></button>
+        <button class="icon-btn px" type="button" aria-label="Sonido" title="Sonido" data-action="sound"></button>
+        <button class="icon-btn px" type="button" aria-label="Cambiar tema" title="Cambiar tema" data-action="theme"></button>
+      </div>
+    </header>
+
+    <main>
+      <section class="view chat-view" id="view-chat" data-view-panel="chat">
+        <div class="scrim" data-action="drawer"></div>
+        <aside class="sidebar card px" id="sidebar" aria-label="Historial">
+          <button class="primary px" type="button" data-action="new"><span data-icon="plus"></span>nueva charla</button>
+          <p class="label">historial</p>
+          <ul class="chat-list" id="chat-list"></ul>
+          <p class="sidebar-note">se guarda solo en este navegador</p>
+        </aside>
+
+        <section class="talk card px" aria-label="Conversacion">
+          <div class="thread" id="thread" aria-live="polite"></div>
+          <form class="composer" id="composer" novalidate>
+            <div class="perch">
+              <p class="bubble px" id="bubble" role="status" hidden></p>
+              <canvas class="mascot" id="mascot" width="16" height="14" role="img" aria-label="bichi, la mascota"></canvas>
+            </div>
+            <label class="sr-only" for="prompt">mensaje</label>
+            <textarea class="input px" id="prompt" rows="1" placeholder="escribe tu pregunta..." enterkeyhint="send"></textarea>
+            <div class="composer-bar">
+              <label class="model px">
+                <span class="sr-only">modelo</span>
+                <select id="model"></select>
+                <span data-icon="chevron"></span>
+              </label>
+              <span class="hint only-wide">enter envia, shift+enter salta linea</span>
+              <button class="send px" id="send" type="submit" aria-label="Enviar" data-icon="send"></button>
+            </div>
+          </form>
+        </section>
+      </section>
+
+      <section class="view docs-view" id="view-docs" data-view-panel="docs" hidden></section>
+    </main>
+
+    <dialog class="dialog card px" id="key-dialog">
+      <form method="dialog" class="key-form">
+        <h2>clave de la API</h2>
+        <p>la web funciona sin clave. Si tienes una propia, pegala aqui y se usara en el chat. Se guarda solo en este navegador.</p>
+        <input class="input px" id="key-input" type="password" autocomplete="off" spellcheck="false" placeholder="sk-..." />
+        <div class="dialog-actions">
+          <button class="ghost px" type="submit" value="clear">quitar</button>
+          <button class="primary px" type="submit" value="save">guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>
