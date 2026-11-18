@@ -185,6 +185,7 @@ export function createChat({ root, mascot, openKey }) {
         reply.reasoning += reasoning;
         painted ||= requestAnimationFrame(paint);
       }
+      if (!reply.content.trim()) throw Object.assign(new Error('el modelo no llego a responder, prueba de nuevo'), { empty: true });
       mascot.setMood('happy', 1600);
       mascot.say(pick(CHEERS), 1800);
       sound.play('done');
@@ -192,7 +193,7 @@ export function createChat({ root, mascot, openKey }) {
       if (error.name === 'AbortError') {
         mascot.setMood('idle');
       } else {
-        reply.error = error.status === 401 ? 'la clave de la API no es valida' : `algo fallo: ${error.message}`;
+        reply.error = error.status === 401 ? 'la clave de la API no es valida' : error.empty ? error.message : `algo fallo: ${error.message}`;
         mascot.setMood('sad', 2600);
         mascot.say('uy, no pude responder', 2600);
         sound.play('error');
@@ -202,7 +203,7 @@ export function createChat({ root, mascot, openKey }) {
       cancelAnimationFrame(painted);
       controller = null;
       setBusy(false);
-      if (reply.content || reply.reasoning) {
+      if (reply.content.trim()) {
         history.push(chat, reply);
         node.replaceWith(messageNode(reply, chat.messages.length - 1));
       } else if (reply.error) {

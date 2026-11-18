@@ -20,6 +20,7 @@ if [ ! -f "$TARGET/server.js" ]; then
     "$TARGET/scripts/ops/opencode-free-relay.ts"
 fi
 
+"$ROOT/runtime/bin/node" "$(dirname "$0")/patch-release.mjs" "$TARGET"
 ln -sfn "$TARGET" "$ROOT/current"
 systemctl restart hacksllm
 sleep 15 && systemctl is-active hacksllm

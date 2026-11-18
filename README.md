@@ -47,7 +47,11 @@ una capa gratuita se agota o limita por IP la respuesta llega de otra. El campo 
 quien contesto. Las imagenes acaban en un modelo con vision de la reserva.
 
 Limites conocidos: la capa de OpenCode se agota a diario por IP; Cloudflare limita por minuto e ignora el prompt
-de sistema; DuckDuckGo limita rapido con rafagas.
+de sistema del cliente; DuckDuckGo limita rapido con rafagas.
+
+`deploy/patch-release.mjs` ajusta el build compilado de cada release (lo llama `install-release.sh`): el Playground
+de Cloudflare arranca con un prompt que promete herramientas MCP que no tiene, y los modelos anunciaban que iban a
+buscar algo y no respondian; el parche le pone un prompt neutro. Si una version nueva cambia ese codigo, avisa.
 
 ## bichi work
 
@@ -140,6 +144,7 @@ http://localhost:20128 (la contrasena inicial esta en `INITIAL_PASSWORD` de `/op
 deploy/
   setup.sh             preparacion unica: usuario, Node 24, Bun, CLI de OmniRoute, systemd, nginx
   install-release.sh   instala el servidor de una version publicada y cambia /opt/hacksllm/current
+  patch-release.mjs    parches al build de OmniRoute que aun no estan upstream
   provision.sh         proveedores, combos (models.mjs) y claves
   models.mjs           combos publicos y su reserva comun
   hacksllm-cli         CLI de OmniRoute con el entorno del servicio
