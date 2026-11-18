@@ -3,6 +3,7 @@ import { authHeaders, failure, sseEvents, ApiError } from './api.js';
 import { store } from './store.js';
 
 const BASE = `${location.origin}/work/sessions`;
+const encodePath = (path) => path.split('/').map(encodeURIComponent).join('/');
 
 async function call(path, options = {}) {
   const response = await fetch(BASE + path, { ...options, headers: { ...authHeaders(), ...options.headers } });
@@ -18,10 +19,11 @@ export const work = {
   stop: (id) => call(`/${id}/stop`, { method: 'POST' }).catch(() => {}),
   remove: (id) => call(`/${id}`, { method: 'DELETE' }).catch(() => {}),
 
-  upload(id, file, onProgress) {
+  // file puede ser un File o { name, blob } con una ruta relativa como nombre.
+  upload(id, file, onProgress = () => {}) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('PUT', `${BASE}/${id}/files/${encodeURIComponent(file.name)}`);
+      xhr.open('PUT', `${BASE}/${id}/files/${encodePath(file.name)}`);
       for (const [name, value] of Object.entries(authHeaders())) if (name !== 'Content-Type') xhr.setRequestHeader(name, value);
       xhr.upload.onprogress = (event) => event.lengthComputable && onProgress(event.loaded / event.total);
       xhr.onload = () => {
@@ -29,7 +31,7 @@ export const work = {
         xhr.status < 300 ? resolve(body) : reject(new ApiError(xhr.status, body.error?.message ?? 'no se pudo subir'));
       };
       xhr.onerror = () => reject(new ApiError(0, 'sin conexion'));
-      xhr.send(file);
+      xhr.send(file.blob ?? file);
     });
   },
 
@@ -39,12 +41,16 @@ export const work = {
     yield* sseEvents(response.body);
   },
 
-  async save(id, path, name) {
-    const response = await fetch(path ? `${BASE}/${id}/files/${path.split('/').map(encodeURIComponent).join('/')}` : `${BASE}/${id}/zip`, { headers: authHeaders() });
+  // Un archivo del espacio, o el zip de todo si no se pasa ruta.
+  async blob(id, path) {
+    const response = await fetch(path ? `${BASE}/${id}/files/${encodePath(path)}` : `${BASE}/${id}/zip`, { headers: authHeaders() });
     if (!response.ok) throw await failure(response);
-    const url = URL.createObjectURL(await response.blob());
-    const link = Object.assign(document.createElement('a'), { href: url, download: name });
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    return response.blob();
   },
 };
+
+export function deliver(blob, name) {
+  const url = URL.createObjectURL(blob);
+  Object.assign(document.createElement('a'), { href: url, download: name }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}

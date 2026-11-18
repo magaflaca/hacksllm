@@ -24,7 +24,7 @@ export function createChat({ root, mascot, openKey }) {
   const send = root.querySelector('#send');
   const modelPicker = root.querySelector('#model');
 
-  let chat = history.create(store.get('model', DEFAULT_MODEL));
+  let chat = history.create({ model: store.get('model', DEFAULT_MODEL) });
   let controller = null;
 
   const setBusy = (busy) => {
@@ -143,7 +143,7 @@ export function createChat({ root, mascot, openKey }) {
 
   function startNew() {
     if (controller) controller.abort();
-    chat = history.create(modelPicker.value || DEFAULT_MODEL);
+    chat = history.create({ model: modelPicker.value || DEFAULT_MODEL });
     renderThread();
     renderList();
     sound.play('select');
@@ -154,7 +154,7 @@ export function createChat({ root, mascot, openKey }) {
   function remove(id) {
     history.remove(id);
     sound.play('remove');
-    if (id === chat.id) chat = history.create(chat.model);
+    if (id === chat.id) chat = history.create({ model: chat.model });
     renderThread();
     renderList();
   }

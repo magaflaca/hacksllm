@@ -92,7 +92,13 @@ function buildPrompt(session, message, uploads, fresh) {
 // ---- turno
 
 async function run(req, res, session) {
-  const { message = '', effort = 'medium', uploads = [] } = await readJson(req);
+  const { message = '', effort = 'medium', uploads = [], context = [] } = await readJson(req);
+  if (!session.history.length && Array.isArray(context)) {
+    session.history = context
+      .filter((turn) => ['user', 'assistant'].includes(turn?.role) && typeof turn.text === 'string')
+      .slice(-HISTORY_TURNS)
+      .map(({ role, text }) => ({ role, text: text.slice(0, 2000) }));
+  }
   if (!message.trim()) return fail(res, 400, 'mensaje vacio');
   if (session.busy && Date.now() - session.busy < 30 * 60_000) return fail(res, 409, 'esta sesion ya esta trabajando');
 
@@ -157,10 +163,16 @@ async function run(req, res, session) {
   }
 }
 
+// Acepta rutas con carpetas (restaurar entregables); cada tramo se limpia y nada empieza por punto.
 async function upload(req, res, session, name) {
-  const clean = path.basename(decodeURIComponent(name)).replace(/[^\w.\- ()À-ɏ]/g, '_').slice(0, 120);
-  const target = clean && sessions.resolveInside(session.id, clean);
-  if (!target || clean.startsWith('.')) return fail(res, 400, 'nombre de archivo invalido');
+  const segments = decodeURIComponent(name)
+    .split('/')
+    .map((part) => part.replace(/[^\w.\- ()À-ɏ]/g, '_').slice(0, 120))
+    .filter(Boolean);
+  const clean = segments.join('/');
+  const target = segments.length && segments.length <= 8 && !segments.some((part) => part.startsWith('.')) && sessions.resolveInside(session.id, clean);
+  if (!target) return fail(res, 400, 'nombre de archivo invalido');
+  await mkdir(path.dirname(target), { recursive: true, mode: 0o2775 });
   const length = Number(req.headers['content-length'] ?? 0);
   if (length > MAX_UPLOAD) return fail(res, 413, 'el archivo pasa de 100 MB');
   if (sessions.totalSize(await sessions.listFiles(session.id)) + length > MAX_SPACE) return fail(res, 413, 'el espacio de la sesion esta lleno (1 GB)');

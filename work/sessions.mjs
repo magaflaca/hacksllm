@@ -7,8 +7,8 @@ import { runner } from './engines.mjs';
 
 export const WORKSPACES = '/srv/hacksllm-work/ws';
 const META = process.env.WORK_META ?? '/opt/hacksllm/data/work';
-const IDLE_MS = 6 * 3600_000;
-const MAX_SESSIONS = 40;
+const IDLE_MS = 48 * 3600_000;
+const MAX_SESSIONS = 120;
 const HIDDEN = new Set(['node_modules', '.venv', 'venv', '__pycache__', '.git', '.cache', '.npm']);
 const MAX_LISTED = 400;
 

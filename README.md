@@ -63,8 +63,12 @@ web (#/work) -> Pages /work/* -> nginx /work/ -> hacksllm-work :20130 (usuario h
                                      agy  ->  agy (respaldo)  ->  opencode + OmniRoute
 ```
 
-- Una sesion por visita (se guarda en `sessionStorage`), ligada al hash de la clave que la creo. El espacio vive
-  en `/srv/hacksllm-work/ws/<id>` y se borra tras 6 h sin uso.
+- Las sesiones viven en el navegador: la conversacion en `localStorage` (historial en la barra lateral, hasta 60)
+  y una copia de las subidas y entregables en IndexedDB (hasta 25 MB por archivo y 400 MB en total). Se pueden
+  descargar, tambien en .zip, aunque el servidor ya no tenga el espacio.
+- En el servidor cada sesion tiene un espacio en `/srv/hacksllm-work/ws/<id>`, ligado al hash de la clave que lo
+  creo, que se borra tras 48 h sin uso. Al seguir una sesion vieja se crea otro espacio, se le suben los archivos
+  guardados en el navegador y el agente recibe los ultimos turnos como contexto.
 - El sandbox solo ve su propia sesion: sin `/root`, `/opt`, `/home`, `/var/lib` ni las demas sesiones, con
   1.2 GB de RAM, 2 CPU, 25 min por turno y sin sudo. Puede instalar con pip `--user`, uv, venv o npm.
 - Motores en orden: agy con el esfuerzo elegido (rapido, normal, a fondo), el respaldo de agy, y opencode contra

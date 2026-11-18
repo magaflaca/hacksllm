@@ -1,10 +1,13 @@
 import { h } from '../core/dom.js';
 import { icon } from '../art/pixels.js';
 import { sound } from '../core/sound.js';
-import { work } from '../core/work.js';
+import { store } from '../core/store.js';
+import { createHistory } from '../core/chats.js';
+import { work, deliver } from '../core/work.js';
+import { vault, MAX_FILE } from '../core/vault.js';
+import { zipBlob } from '../core/zip.js';
 import { markdown } from './markdown.js';
 
-const SAVED = 'hacksllm:work';
 const EFFORTS = [
   ['low', 'rapido'],
   ['medium', 'normal'],
@@ -18,23 +21,22 @@ const SUGGESTIONS = [
   'escribe un script de python que pase imagenes a webp y pruebalo',
   'crea una api pequena en node con un endpoint de tareas y sus tests',
 ];
+const CONTEXT_TURNS = 6;
+const MAX_STEPS = 80;
 
 // Los enlaces a rutas del espacio se descargan con las tarjetas; en el texto quedan como codigo.
 const LOCAL_LINK = /\[([^\]\n]+)\]\((?!https?:)[^)\s]+\)(\s*\(`?[^)\n]*`?\))?/g;
 const tidy = (text) => text.replace(LOCAL_LINK, '`$1`');
 const size = (bytes) => (bytes < 1024 ? `${bytes} B` : bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`);
 const baseName = (path) => path.split('/').pop();
+const slug = (text) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
 
-function readSaved() {
-  try {
-    return JSON.parse(sessionStorage.getItem(SAVED)) ?? {};
-  } catch {
-    return {};
-  }
-}
+// Sesiones guardadas en este navegador; al expulsar una vieja se va tambien su copia de archivos.
+const sessions = createHistory('work', { limit: 60, onEvict: (item) => vault.drop(item.id) });
 
 export function createWork({ root, mascot, openKey }) {
   const thread = root.querySelector('#work-thread');
+  const sessionList = root.querySelector('#work-sessions');
   const fileList = root.querySelector('#work-files');
   const form = root.querySelector('#work-composer');
   const prompt = root.querySelector('#work-prompt');
@@ -42,16 +44,16 @@ export function createWork({ root, mascot, openKey }) {
   const effort = root.querySelector('#work-effort');
   const picker = root.querySelector('#work-file');
   const tray = root.querySelector('#work-attachments');
+  const zipButton = root.querySelector('[data-action="work-zip"]');
 
-  let state = { id: null, messages: [], effort: 'medium', ...readSaved() };
+  const blank = () => sessions.create({ remote: null });
+  let current = sessions.all()[0] ?? blank();
   let pending = [];
   let controller = null;
+  const alive = new Set();
 
-  const persist = () => {
-    try {
-      sessionStorage.setItem(SAVED, JSON.stringify(state));
-    } catch {}
-  };
+  const stored = () => Boolean(sessions.find(current.id));
+  const persist = () => stored() && sessions.touch(current);
 
   const setBusy = (busy) => {
     send.replaceChildren(icon(busy ? 'stop' : 'send'));
@@ -70,51 +72,95 @@ export function createWork({ root, mascot, openKey }) {
     if (force || near) thread.scrollTop = thread.scrollHeight;
   };
 
-  async function save(path) {
+  // ---- espacio en el servidor
+
+  // Devuelve el id del espacio remoto; si el servidor ya lo borro, crea otro y le devuelve la copia local.
+  async function ensureRemote() {
+    if (current.remote && alive.has(current.remote)) return current.remote;
+    if (current.remote) {
+      try {
+        await work.get(current.remote);
+        alive.add(current.remote);
+        return current.remote;
+      } catch (error) {
+        if (error.status !== 404) throw error;
+      }
+    }
+    current.remote = await work.create();
+    alive.add(current.remote);
+    persist();
+    const copies = await vault.list(current.id);
+    if (copies.length) {
+      mascot.say('recupero tus archivos', 2400);
+      await Promise.all(copies.map((copy) => work.upload(current.remote, { name: copy.path, blob: copy.blob }).catch(() => {})));
+    }
+    return current.remote;
+  }
+
+  async function remoteFiles() {
+    if (!work.hasKey() || !current.remote) return null;
     try {
-      sound.play('tap');
-      await work.save(state.id, path, path ? baseName(path) : 'bichi-work.zip');
+      const files = await work.files(current.remote);
+      alive.add(current.remote);
+      return files;
+    } catch {
+      alive.delete(current.remote);
+      return null;
+    }
+  }
+
+  // Guarda en el navegador los archivos que cambio el turno, para que sobrevivan al servidor.
+  async function keep(session, files) {
+    for (const file of files.filter((item) => item.size <= MAX_FILE)) {
+      try {
+        await vault.put(session.id, file.path, await work.blob(session.remote, file.path));
+      } catch {}
+    }
+  }
+
+  async function save(path) {
+    sound.play('tap');
+    try {
+      let blob = path ? (await vault.get(current.id, path))?.blob : null;
+      if (!blob) {
+        try {
+          blob = await work.blob(current.remote, path);
+        } catch (error) {
+          if (path) throw error;
+          const copies = await vault.list(current.id);
+          if (!copies.length) throw error;
+          blob = await zipBlob(copies);
+        }
+      }
+      deliver(blob, path ? baseName(path) : `${slug(current.title) || 'bichi-work'}.zip`);
       sound.play('copy');
-    } catch (error) {
-      mascot.say(error.status === 404 ? 'ese archivo ya no esta' : 'no pude descargarlo', 2200);
+    } catch {
+      mascot.say('ese archivo ya no esta', 2200);
       sound.play('error');
     }
   }
 
-  const fileCard = (file) =>
-    h(
-      'button.file-card.px',
-      { type: 'button', title: `Descargar ${file.path}`, onclick: () => save(file.path) },
-      icon('file'),
-      h('span.file-name', {}, file.path),
-      h('span.file-size', {}, size(file.size)),
-      icon('download'),
+  // ---- barra lateral
+
+  function renderSessions() {
+    const items = sessions.all();
+    sessionList.replaceChildren(
+      ...items.map((item) =>
+        h(
+          'li.chat-item',
+          { dataset: { active: item.id === current.id } },
+          h('button.chat-open', { type: 'button', onclick: () => open(item.id) }, h('span', {}, item.title || 'sin titulo')),
+          h('button.chat-remove', { type: 'button', 'aria-label': 'Borrar sesion', title: 'Borrar', onclick: () => remove(item.id) }, icon('trash')),
+        ),
+      ),
     );
-
-  // ---- sesion
-
-  async function ensureSession() {
-    if (state.id) return state.id;
-    state.id = await work.create();
-    persist();
-    return state.id;
+    if (!items.length) sessionList.append(h('li.chat-empty', {}, 'aun no hay sesiones'));
   }
 
   async function refreshFiles() {
-    if (!work.hasKey() || !state.id) return renderFiles([]);
-    try {
-      renderFiles(await work.files(state.id));
-    } catch (error) {
-      if (error.status === 404) {
-        state = { ...state, id: null, messages: [] };
-        persist();
-        renderThread();
-      }
-      renderFiles([]);
-    }
-  }
-
-  function renderFiles(files) {
+    const session = current;
+    const files = (await remoteFiles()) ?? (await vault.list(session.id)).map(({ path, size }) => ({ path, size }));
+    if (session !== current) return;
     fileList.replaceChildren(
       ...files.map((file) =>
         h(
@@ -126,20 +172,50 @@ export function createWork({ root, mascot, openKey }) {
       ),
     );
     if (!files.length) fileList.append(h('li.chat-empty', {}, 'aun no hay archivos'));
-    root.querySelector('[data-action="work-zip"]').disabled = !files.length;
+    zipButton.disabled = !files.length;
   }
 
-  async function startNew() {
-    if (controller) return;
-    if (state.id) work.remove(state.id);
-    state = { id: null, messages: [], effort: state.effort };
+  function show(session) {
+    current = session;
     pending = [];
-    persist();
     renderTray();
     renderThread();
-    renderFiles([]);
-    sound.play('select');
+    renderSessions();
+    refreshFiles();
     root.dispatchEvent(new CustomEvent('chat:opened'));
+  }
+
+  function open(id) {
+    if (controller) return mascot.say('espera que termine', 2000);
+    show(sessions.find(id) ?? current);
+    sound.play('tap');
+  }
+
+  // Una sesion sin mensajes no se guarda: si se abandona, se limpia su espacio.
+  function discardBlank() {
+    if (stored()) return;
+    vault.drop(current.id);
+    if (current.remote) work.remove(current.remote);
+  }
+
+  function startNew() {
+    if (controller) return mascot.say('espera que termine', 2000);
+    discardBlank();
+    show(blank());
+    sound.play('select');
+    prompt.focus();
+  }
+
+  function remove(id) {
+    if (controller) return mascot.say('espera que termine', 2000);
+    const item = sessions.find(id);
+    if (!item) return;
+    sessions.remove(id);
+    vault.drop(id);
+    if (item.remote) work.remove(item.remote);
+    sound.play('remove');
+    if (id === current.id) show(sessions.all()[0] ?? blank());
+    else renderSessions();
   }
 
   // ---- adjuntos
@@ -162,23 +238,25 @@ export function createWork({ root, mascot, openKey }) {
 
   async function attach(files) {
     if (!work.hasKey()) return locked();
+    const session = current;
     let id;
     try {
-      id = await ensureSession();
+      id = await ensureRemote();
     } catch (error) {
       return report(error);
     }
     sound.play('select');
     await Promise.all(
-      [...files].map(async (file) => {
+      files.map(async (file) => {
         const item = { name: file.name, state: 'up', progress: 0 };
         pending.push(item);
         renderTray();
         try {
           const { path } = await work.upload(id, file, (progress) => ((item.progress = progress), renderTray()));
           Object.assign(item, { name: path, state: 'ok' });
+          vault.put(session.id, path, file);
         } catch (error) {
-          Object.assign(item, { state: 'error' });
+          item.state = 'error';
           mascot.say(error.message, 2600);
           sound.play('error');
         }
@@ -191,11 +269,12 @@ export function createWork({ root, mascot, openKey }) {
   // ---- hilo
 
   function welcome() {
+    const title = h('h2', {}, 'bichi ', h('b', {}, 'work'));
     if (!work.hasKey()) {
       return h(
         'div.welcome',
         {},
-        h('h2', {}, 'bichi ', h('b', {}, 'work')),
+        title,
         h('p', {}, 'un espacio de trabajo de verdad: subes archivos, ejecuto codigo, instalo lo que haga falta y te entrego los resultados. Funciona con tu clave de la API.'),
         h('div.welcome-actions', {}, h('button.primary.px', { type: 'button', onclick: openKey }, icon('key'), 'poner mi clave')),
       );
@@ -203,8 +282,8 @@ export function createWork({ root, mascot, openKey }) {
     return h(
       'div.welcome',
       {},
-      h('h2', {}, 'bichi ', h('b', {}, 'work')),
-      h('p', {}, 'sube lo que quieras y pideme algo: lo construyo, lo pruebo y te lo entrego en archivos.'),
+      title,
+      h('p', {}, 'sube lo que quieras y pideme algo: lo construyo, lo pruebo y te lo entrego en archivos. Tus sesiones y archivos se guardan en este navegador.'),
       h(
         'div.suggestions',
         {},
@@ -214,7 +293,7 @@ export function createWork({ root, mascot, openKey }) {
   }
 
   function stepsBlock(steps, live, status) {
-    if (!steps.length && !live) return null;
+    if (!steps?.length && !live) return null;
     const label = live ? status || 'trabajando' : `${steps.length} ${steps.length === 1 ? 'paso' : 'pasos'}`;
     return h(
       'details.reasoning.steps',
@@ -223,12 +302,22 @@ export function createWork({ root, mascot, openKey }) {
       h(
         'ol.step-list',
         {},
-        steps.map((step) =>
+        (steps ?? []).map((step) =>
           h('li.step', { dataset: { state: step.state } }, icon(STEP_ICONS[step.kind] ?? 'sparkle'), h('span.step-verb', {}, STEP_VERBS[step.kind] ?? 'usa'), h('code', {}, step.label)),
         ),
       ),
     );
   }
+
+  const fileCard = (file) =>
+    h(
+      'button.file-card.px',
+      { type: 'button', title: `Descargar ${file.path}`, onclick: () => save(file.path) },
+      icon('file'),
+      h('span.file-name', {}, file.path),
+      h('span.file-size', {}, size(file.size)),
+      icon('download'),
+    );
 
   function deliverables(files) {
     if (!files?.length) return null;
@@ -237,8 +326,7 @@ export function createWork({ root, mascot, openKey }) {
   }
 
   function botNode(message, live = false) {
-    const body = h('div.msg-body');
-    const node = h('article.msg.msg-bot', {}, body);
+    const node = h('article.msg.msg-bot', {}, h('div.msg-body'));
     paint(node, message, live);
     return node;
   }
@@ -260,7 +348,7 @@ export function createWork({ root, mascot, openKey }) {
     );
 
   function renderThread() {
-    const nodes = state.messages.map((message) => (message.role === 'user' ? userNode(message) : botNode(message)));
+    const nodes = current.messages.map((message) => (message.role === 'user' ? userNode(message) : botNode(message)));
     thread.replaceChildren(...(nodes.length ? nodes : [welcome()]));
     scrollDown(true);
   }
@@ -281,7 +369,16 @@ export function createWork({ root, mascot, openKey }) {
     openKey();
   }
 
+  // Ultimos turnos de esta sesion, por si el servidor empieza un espacio nuevo sin memoria.
+  const context = () =>
+    current.messages
+      .slice(0, -1)
+      .filter((message) => message.content)
+      .slice(-CONTEXT_TURNS)
+      .map(({ role, content }) => ({ role, text: content.slice(0, 2000) }));
+
   async function answer(message, uploads) {
+    const session = current;
     const reply = { role: 'assistant', content: '', steps: [], files: [], status: '' };
     const node = botNode(reply, true);
     thread.append(node);
@@ -292,15 +389,16 @@ export function createWork({ root, mascot, openKey }) {
     let frame = 0;
     const repaint = () => (frame ||= requestAnimationFrame(() => ((frame = 0), paint(node, reply, true), scrollDown())));
     try {
-      for await (const event of work.run(state.id, { message, effort: state.effort, uploads }, controller.signal)) {
+      const body = { message, effort: effort.value, uploads, context: context() };
+      for await (const event of work.run(session.remote, body, controller.signal)) {
         if (event.type === 'status') reply.status = event.text;
         else if (event.type === 'text') reply.content += event.delta;
         else if (event.type === 'step') {
           const index = reply.steps.findIndex((step) => step.id === event.id);
           const step = { id: event.id, kind: event.kind, label: event.label, state: event.state };
-          if (index < 0) reply.steps.push(step), sound.play('tap');
-          else reply.steps[index] = step;
-        } else if (event.type === 'files') reply.files = event.files;
+          if (index >= 0) reply.steps[index] = step;
+          else if (reply.steps.length < MAX_STEPS) reply.steps.push(step), sound.play('tap');
+        } else if (event.type === 'files') reply.files = event.files.map(({ path, size }) => ({ path, size }));
         else if (event.type === 'done') reply.content = event.text || reply.content;
         else if (event.type === 'error') reply.error = event.message;
         repaint();
@@ -321,17 +419,17 @@ export function createWork({ root, mascot, openKey }) {
       controller = null;
       setBusy(false);
       delete reply.status;
-      state.messages.push(reply);
-      persist();
-      node.replaceWith(botNode(reply));
-      refreshFiles();
+      sessions.push(session, reply);
+      if (session === current) node.replaceWith(botNode(reply));
+      await keep(session, reply.files);
+      if (session === current) refreshFiles();
     }
   }
 
   async function submit(event) {
     event.preventDefault();
     if (controller) {
-      work.stop(state.id);
+      work.stop(current.remote);
       return controller.abort();
     }
     if (!work.hasKey()) return locked();
@@ -342,7 +440,7 @@ export function createWork({ root, mascot, openKey }) {
     }
     if (pending.some((item) => item.state === 'up')) return mascot.say('espera, aun subo archivos', 2000);
     try {
-      await ensureSession();
+      await ensureRemote();
     } catch (error) {
       return report(error);
     }
@@ -350,9 +448,8 @@ export function createWork({ root, mascot, openKey }) {
     pending = [];
     renderTray();
     const message = { role: 'user', content, uploads };
-    if (!state.messages.length) thread.replaceChildren();
-    state.messages.push(message);
-    persist();
+    if (!current.messages.length) thread.replaceChildren();
+    sessions.push(current, message);
     thread.append(userNode(message));
     prompt.value = '';
     resize();
@@ -360,8 +457,8 @@ export function createWork({ root, mascot, openKey }) {
     answer(content, uploads);
   }
 
-  effort.replaceChildren(...EFFORTS.map(([value, label]) => h('option', { value, selected: value === state.effort }, label)));
-  effort.addEventListener('change', () => ((state.effort = effort.value), persist(), sound.play('select')));
+  effort.replaceChildren(...EFFORTS.map(([value, label]) => h('option', { value, selected: value === store.get('workEffort', 'medium') }, label)));
+  effort.addEventListener('change', () => (store.set('workEffort', effort.value), sound.play('select')));
   form.addEventListener('submit', submit);
   prompt.addEventListener('input', resize);
   prompt.addEventListener('keydown', (event) => {
@@ -370,7 +467,7 @@ export function createWork({ root, mascot, openKey }) {
   picker.addEventListener('change', () => (attach([...picker.files]), (picker.value = '')));
   root.querySelector('[data-action="work-attach"]').addEventListener('click', () => (work.hasKey() ? picker.click() : locked()));
   root.querySelector('[data-action="work-new"]').addEventListener('click', startNew);
-  root.querySelector('[data-action="work-zip"]').addEventListener('click', () => save());
+  zipButton.addEventListener('click', () => save());
   root.addEventListener('dragover', (event) => (event.preventDefault(), root.classList.add('is-dropping')));
   root.addEventListener('dragleave', (event) => event.target === root && root.classList.remove('is-dropping'));
   root.addEventListener('drop', (event) => {
@@ -378,8 +475,9 @@ export function createWork({ root, mascot, openKey }) {
     root.classList.remove('is-dropping');
     if (event.dataTransfer.files.length) attach([...event.dataTransfer.files]);
   });
+  sessions.onChange(renderSessions);
 
-  const refresh = () => (renderThread(), refreshFiles());
+  const refresh = () => (renderThread(), renderSessions(), refreshFiles());
   renderTray();
   refresh();
   return { refresh };
