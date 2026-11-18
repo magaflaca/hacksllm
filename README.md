@@ -94,8 +94,11 @@ npm run deploy:web                  # build y despliegue en Cloudflare Pages
 ## Servidor
 
 ```bash
-deploy/setup.sh                                   # una vez, como root
-deploy/build-omniroute.sh v3.8.54                 # solo si la version aun no esta en npm
-deploy/upgrade.sh /opt/hacksllm-build/omniroute-3.8.54.tgz
+deploy/setup.sh                  # una vez, como root
+deploy/install-release.sh 3.8.54 # y cada vez que salga una version nueva
 deploy/provision.sh
 ```
+
+El servidor sale del paquete de escritorio de cada release de GitHub, que ya trae el build de Next compilado:
+compilarlo en el VPS no cabe en su memoria. Las versiones quedan en `/opt/hacksllm/releases/<version>`, asi que
+volver atras es repetir `install-release.sh` con la anterior. El CLI de npm solo se usa para administrar.
