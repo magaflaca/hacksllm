@@ -6,12 +6,11 @@ Wants=network-online.target
 [Service]
 User=hacksllm
 Group=hacksllm
-WorkingDirectory=/opt/hacksllm
+WorkingDirectory=/opt/hacksllm/current
 EnvironmentFile=/opt/hacksllm/env
 Environment=HOME=/opt/hacksllm/home
 Environment=PATH=/opt/hacksllm/runtime/bin:/opt/hacksllm/bun/bin:/usr/bin:/bin
-Environment=NODE_OPTIONS=--max-old-space-size=640
-ExecStart=/opt/hacksllm/runtime/bin/omniroute --no-open
+ExecStart=/opt/hacksllm/runtime/bin/node dev/run-standalone.mjs
 Restart=always
 RestartSec=3
 MemoryHigh=900M

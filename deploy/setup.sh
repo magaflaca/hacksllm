@@ -22,6 +22,12 @@ if [ ! -f "$ROOT/env" ]; then
       "$HERE/omniroute.env" > "$ROOT/env"
   chown root:hacksllm "$ROOT/env" && chmod 640 "$ROOT/env"
 fi
+grep -E '^[A-Z_]+=' "$HERE/omniroute.env" | while IFS== read -r key value; do
+  grep -q "^$key=" "$ROOT/env" || echo "$key=$value" >> "$ROOT/env"
+done
+
+# El CLI de npm solo administra (habla con el servidor por su API); el servidor sale de install-release.sh.
+[ -x "$ROOT/runtime/bin/omniroute" ] || PATH="$ROOT/runtime/bin:$PATH" npm install -g --no-audit --no-fund --loglevel=error omniroute
 
 install -m 755 "$HERE/hacksllm-cli" /usr/local/bin/hacksllm-cli
 install -m 644 "$HERE/hacksllm.service" /etc/systemd/system/hacksllm.service
