@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-// Da a cada proxy propio (lineas ip:puerto:usuario:contrasena) su propia conexion gratuita de OpenCode.
-// La capa gratuita limita por IP de salida: con una conexion por IP, un 429 solo aparta esa conexion
-// y el router sigue con las demas. OmniRoute distingue conexiones por su credencial y la capa gratuita
-// envia siempre el literal anonimo, asi que cada una guarda una credencial propia (public-<ip>).
+// Da a cada proxy propio (lineas ip:puerto:usuario:contrasena) su propia conexion gratuita de OpenCode,
+// para que una salida caida (timeout, 407) solo aparte esa conexion y el router siga por otra.
+// OmniRoute distingue conexiones por su credencial y la capa gratuita envia siempre el literal anonimo,
+// asi que cada una guarda una credencial propia (public-<ip>). La sesion de OpenCode se deriva de la
+// conversacion, no de la conexion, asi que se mantiene al cambiar de salida.
 // Tambien deja una conexion directa por la IP del servidor. Idempotente.
 // Uso: node proxies.mjs <archivo>
 import { readFileSync } from 'node:fs';

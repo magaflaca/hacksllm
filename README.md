@@ -24,6 +24,16 @@ agota, `big-pickle`, `mimo-v2.6-flash-free` y `nemotron-3-ultra-free`, todos de 
 La capa gratuita solo responde a Bun imitando al CLI de OpenCode; de eso se encarga el relay que trae OmniRoute
 desde la v3.8.54 y que el servidor arranca solo.
 
+### Sesiones y salidas
+
+- Cada conversacion tiene su propia sesion de OpenCode: OmniRoute la deriva del contenido de la conversacion
+  (o usa la `x-opencode-session` que mande el cliente) y cada peticion lleva un id nuevo.
+- Cada proxy de `deploy/proxies.mjs` es una conexion aparte. Si una salida falla, el router pasa a la siguiente
+  y la conversacion conserva su sesion; tras 3 fallos seguidos el proxy se retira (`PROXY_AUTO_DISABLE`).
+- Un 429 de la capa gratuita es cupo, no conectividad: hoy llega a la vez por todas las salidas con la misma
+  hora de reinicio, asi que cambiar de proxy no lo resuelve. Para seguir sirviendo hace falta un respaldo de
+  otro proveedor en el combo.
+
 La funcion de Pages reenvia `/v1/*` al origen. Las peticiones de la propia web sin clave usan la clave `web`
 (secreto `WEB_KEY` del proyecto de Pages); cualquier otro cliente necesita su propia clave.
 
