@@ -18,6 +18,7 @@ export const work = {
   files: (id) => call(`/${id}/files`).then(({ files }) => files),
   stop: (id) => call(`/${id}/stop`, { method: 'POST' }).catch(() => {}),
   remove: (id) => call(`/${id}`, { method: 'DELETE' }).catch(() => {}),
+  checkout: (id, slug) => call(`/${id}/pages/${slug}`, { method: 'POST' }),
   unpublish: (slug) =>
     fetch(`${location.origin}/work/pages/${slug}`, { method: 'DELETE', headers: authHeaders() }).then((response) => response.ok || response.status === 404),
 

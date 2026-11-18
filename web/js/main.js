@@ -9,10 +9,11 @@ import { createMascot } from './ui/mascot.js';
 import { createChat } from './ui/chat.js';
 import { createDocs } from './ui/docs.js';
 import { createWork } from './ui/work.js';
+import { createPages } from './ui/pages.js';
 
 const $ = (selector) => document.querySelector(selector);
 const action = (name) => document.querySelectorAll(`[data-action="${name}"]`);
-const VIEWS = { chat: '#/', work: '#/work', docs: '#/api' };
+const VIEWS = { chat: '#/', work: '#/work', pages: '#/paginas', docs: '#/api' };
 
 installCursors();
 mountIcons();
@@ -34,6 +35,13 @@ const chat = createChat({ root: chatView, mascot, openKey });
 const workView = $('#view-work');
 const workspace = createWork({ root: workView, mascot, openKey });
 const docs = createDocs({ root: $('#view-docs') });
+const go = (name) => (history.replaceState(null, '', VIEWS[name]), showView(name));
+const sitesPanel = createPages({
+  root: $('#view-pages'),
+  mascot,
+  openKey,
+  editWithBichi: (slug) => (go('work'), workspace.editPage(slug)),
+});
 const perch = $('.perch');
 
 const activeView = () => document.querySelector('[data-view-panel]:not([hidden])');
@@ -46,6 +54,7 @@ function showView(name) {
   for (const tab of document.querySelectorAll('[data-view]')) tab.setAttribute('aria-selected', tab.dataset.view === name);
   document.body.dataset.view = name;
   activeView().querySelector('.composer')?.prepend(perch);
+  if (name === 'pages') sitesPanel.refresh();
 }
 const viewFromHash = () => Object.keys(VIEWS).find((name) => VIEWS[name] === location.hash) ?? 'chat';
 
@@ -88,6 +97,7 @@ keyDialog.addEventListener('close', () => {
   chat.refreshModels();
   docs.refresh();
   workspace.refresh();
+  sitesPanel.refresh();
 });
 keyDialog.addEventListener('click', (event) => event.target === keyDialog && keyDialog.close());
 

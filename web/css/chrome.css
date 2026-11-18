@@ -152,6 +152,29 @@ main {
   }
 }
 
+@media (max-width: 520px) {
+  .tabs {
+    gap: 2px;
+  }
+
+  .tab {
+    gap: 6px;
+    padding: 5px 4px;
+    font-size: 15px;
+  }
+
+  .tab [data-icon] {
+    width: 13px;
+    height: 13px;
+  }
+}
+
+@media (max-width: 400px) {
+  .tab [data-icon] {
+    display: none;
+  }
+}
+
 @media (max-width: 380px) {
   .icon-btn {
     width: 34px;

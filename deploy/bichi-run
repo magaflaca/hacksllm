@@ -23,6 +23,8 @@ esac
 model=${3:-} resume=${4:--}
 [[ $model =~ ^[a-z0-9./:-]+$ && $resume =~ ^[A-Za-z0-9_-]+$ && -d $dir ]] || { echo "argumentos invalidos" >&2; exit 2; }
 prompt=$(cat)
+# Lo que dejo el servidor (subidas, paginas recuperadas) pasa a ser del agente; -h: nunca seguir enlaces.
+chown -R -h hacksllm-work "$dir"
 
 if [ "$cmd" = agy ]; then
   run=("$HOME_DIR/.local/bin/agy" -p "$prompt" --model "$model" --dangerously-skip-permissions --output-format stream-json)

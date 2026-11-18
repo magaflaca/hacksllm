@@ -1,6 +1,6 @@
 // bichi paginas: sirve las webs estaticas que publica bichi work, desde KV y sin tocar el VPS.
 // Claves: site:<nombre> (metadatos) y file:<nombre>/<ruta> (contenido, con su tipo en los metadatos).
-import { shell } from './shell.js';
+import { home, missing, favicon } from './shell.js';
 
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/;
 const EDGE_TTL = 60;
@@ -14,18 +14,8 @@ const TYPES = {
 };
 const typeOf = (path) => TYPES[path.split('.').pop().toLowerCase()] ?? 'application/octet-stream';
 
-const page = (status, title, body) =>
-  new Response(shell(title, body), { status, headers: { 'content-type': TYPES.html, 'cache-control': 'public, max-age=300' } });
-
-const home = () =>
-  page(200, 'bichi paginas', `<h1>bichi <b>paginas</b></h1>
-<p>webs estaticas hechas con bichi work en hacksllm. Cada una vive en <code>bichi.hacks.win/&lt;nombre&gt;</code>.</p>
-<p><a class="btn" href="https://llm.hacks.win/#/work">hacer la mia</a></p>`);
-
-const missing = (slug) =>
-  page(404, 'no existe', `<h1>esta pagina <b>no existe</b></h1>
-<p>${slug ? `nadie ha publicado <code>${slug}</code> todavia, o ya la quitaron.` : 'esa direccion no lleva a ninguna parte.'}</p>
-<p><a class="btn" href="/">volver</a></p>`);
+const html = (status, body) => new Response(body, { status, headers: { 'content-type': TYPES.html, 'cache-control': 'public, max-age=300' } });
+const icon = () => new Response(favicon, { headers: { 'content-type': TYPES.svg, 'cache-control': 'public, max-age=86400' } });
 
 async function file(env, slug, path) {
   const { value, metadata } = await env.PAGES.getWithMetadata(`file:${slug}/${path}`, { type: 'stream', cacheTtl: EDGE_TTL });
@@ -37,23 +27,24 @@ export default {
     if (!['GET', 'HEAD'].includes(request.method)) return new Response('solo lectura', { status: 405 });
     const url = new URL(request.url);
     const [, slug = '', ...rest] = url.pathname.split('/');
-    if (!slug) return home();
-    if (!SLUG.test(slug)) return missing('');
+    if (!slug) return html(200, home());
+    if (slug === 'favicon.svg' || slug === 'favicon.ico') return icon();
+    if (!SLUG.test(slug)) return html(404, missing(''));
     if (!rest.length) return Response.redirect(`${url.origin}/${slug}/${url.search}`, 301);
 
     let path;
     try {
       path = decodeURIComponent(rest.join('/'));
     } catch {
-      return missing(slug);
+      return html(404, missing(slug));
     }
     if (!path || path.endsWith('/')) path += 'index.html';
-    if (path.split('/').some((part) => part === '..' || part.startsWith('.'))) return missing(slug);
+    if (path.split('/').some((part) => part === '..' || part.startsWith('.'))) return html(404, missing(slug));
 
     const found = (await file(env, slug, path)) ?? (!/\.[a-z0-9]+$/i.test(path) && (await file(env, slug, `${path}/index.html`)));
     if (!found) {
       const custom = await file(env, slug, '404.html');
-      return custom ? new Response(custom.value, { status: 404, headers: { 'content-type': custom.type } }) : missing(slug);
+      return custom ? new Response(custom.value, { status: 404, headers: { 'content-type': custom.type } }) : html(404, missing(slug));
     }
     return new Response(request.method === 'HEAD' ? null : found.value, {
       headers: {

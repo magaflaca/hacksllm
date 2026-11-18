@@ -86,20 +86,24 @@ web (#/work) -> Pages /work/* -> nginx /work/ -> hacksllm-work :20130 (usuario h
 
 ### bichi paginas
 
-bichi work puede publicar webs estaticas en `https://bichi.hacks.win/<nombre>` para compartirlas: con el boton del
-globo en el compositor (publica en ese turno) o pidiendolo en el mensaje. El agente deja el sitio en `pagina/` y su
-nombre en `pagina/.publicar`; al terminar el turno el servidor lo sube a Workers KV y la web muestra el enlace.
+Webs estaticas en `https://bichi.hacks.win/<nombre>` que no caducan: viven hasta que su dueno (la clave que las
+publico) las quita. Se crean desde bichi work (boton del globo o pidiendolo) o desde el panel.
 
 ```
-bichi.hacks.win/<nombre>/...  ->  worker bichi/ (Cloudflare)  ->  KV bichi-pages      (el VPS no sirve nada)
-bichi work, al publicar       ->  API de KV con un token que solo puede leer y escribir KV
+bichi.hacks.win/<nombre>/...  ->  worker bichi/ (Cloudflare)  ->  KV bichi-pages     (el VPS no sirve nada)
+bichi.hacks.win/              ->  portada del worker, con enlace al panel
+llm.hacks.win/#/paginas       ->  panel: lista, nueva (zip, archivos o carpeta), editor, renombrar, zip, quitar
+work y panel                  ->  /work/pages del VPS: copia fuente en data/bichi-sites y registro de duenos
 ```
 
-- Solo archivos estaticos (html, css, js, imagenes, fuentes, medios): hasta 300 archivos, 10 MB por archivo y
-  25 MB por pagina. Cada pagina es de la clave que la publico; volver a publicar con el mismo nombre la actualiza.
-- Quien es dueno de cada nombre lo guarda `/opt/hacksllm/data/bichi-pages.json`; KV es solo para servir.
-- Las paginas publicadas de una sesion salen en la barra lateral, con su boton para despublicar.
-- El plan gratis de KV admite 1000 escrituras al dia (una por archivo publicado) y 100k lecturas, con cache de 60 s.
+- El panel vive en llm.hacks.win y no en bichi.hacks.win a proposito: las paginas publicadas ejecutan JavaScript
+  de cualquiera en el origen bichi.hacks.win, asi que un panel ahi podria robar claves.
+- "editar con bichi" abre la pagina en una sesion nueva de work (su codigo en `pagina/`) y el siguiente turno la
+  vuelve a publicar en la misma direccion.
+- Solo archivos estaticos (html, css, js, imagenes, fuentes, medios): hasta 300 archivos, 10 MB por archivo y 25 MB
+  por pagina. Nunca se copian ni sirven enlaces simbolicos.
+- A KV solo se suben los archivos que cambiaron (por hash): el plan gratis admite 1000 escrituras y 100k lecturas
+  al dia. Cloudflare cachea 60 s, asi que un cambio puede tardar hasta un minuto en verse en cada region.
 - Configuracion: `BICHI_ACCOUNT`, `BICHI_KV` y `BICHI_TOKEN` en `/opt/hacksllm/env` (el token se crea en Cloudflare
   con permisos Workers KV Storage Read y Write). El worker se despliega con `npm run deploy:bichi`.
 

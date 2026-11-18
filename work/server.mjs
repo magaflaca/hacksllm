@@ -1,10 +1,11 @@
 // API de bichi work, detras de nginx en /work/. Solo con una clave valida de OmniRoute.
 import http from 'node:http';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile } from 'node:fs/promises';
+import { mkdir, readFile, stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
+import { Transform } from 'node:stream';
 import { ENGINES, available, rest, runEngine } from './engines.mjs';
 import * as sessions from './sessions.mjs';
 import * as pages from './pages.mjs';
@@ -115,7 +116,7 @@ async function publishPage(session, requested, emit) {
     session.page = page.slug;
     emit({ type: 'page', ...page });
   } catch (error) {
-    const reason = error.code === 'ENOENT' ? `falta ${pages.FOLDER}/index.html` : error.message;
+    const reason = error.message === 'falta index.html' ? `falta ${pages.FOLDER}/index.html` : error.message;
     console.warn('[work] pagina', reason);
     emit({ type: 'notice', message: `no pude publicar la pagina: ${reason}` });
   }
@@ -238,11 +239,63 @@ function zip(res, session) {
     'content-disposition': 'attachment; filename="bichi-work.zip"',
     'cache-control': 'no-store',
   });
-  const child = spawn('zip', ['-r', '-q', '-', '.', '-x', '.*', '*/.*', '*/node_modules/*', 'node_modules/*', '*/.venv/*', '.venv/*', '*/__pycache__/*'], {
+  const child = spawn('zip', ['-r', '-q', '-y', '-', '.', '-x', '.*', '*/.*', '*/node_modules/*', 'node_modules/*', '*/.venv/*', '.venv/*', '*/__pycache__/*'], {
     cwd: sessions.workspace(session.id),
   });
   child.stdout.pipe(res);
   res.on('close', () => child.kill());
+}
+
+// ---- panel de paginas
+
+// Corta el cuerpo si pasa del limite, aunque el cliente no mande content-length. Es un Transform: no consume
+// nada hasta que alguien lee, asi no se pierden trozos mientras el handler aun esta preparando el destino.
+function capped(req, max) {
+  const tooBig = () => new pages.PageError(413, `pasa de ${Math.round(max / 1048576)} MB`);
+  if (Number(req.headers['content-length'] ?? 0) > max) throw tooBig();
+  let seen = 0;
+  return req.pipe(
+    new Transform({
+      transform(chunk, _encoding, done) {
+        seen += chunk.length;
+        done(seen > max ? tooBig() : null, chunk);
+      },
+    }),
+  );
+}
+
+async function readBody(req, max = 4096) {
+  let raw = '';
+  for await (const chunk of capped(req, max)) raw += chunk;
+  return JSON.parse(raw || '{}');
+}
+
+function zipFolder(res, cwd, name) {
+  res.writeHead(200, { 'content-type': 'application/zip', 'content-disposition': `attachment; filename="${name}.zip"`, 'cache-control': 'no-store' });
+  const child = spawn('zip', ['-r', '-q', '-y', '-', '.'], { cwd });
+  child.stdout.pipe(res);
+  res.on('close', () => child.kill());
+}
+
+async function pagesRoute(req, res, owner, slug, resource, rest) {
+  const route = rest.join('/');
+  if (!slug && req.method === 'GET') return send(res, 200, { pages: await pages.mine(owner) });
+  if (!slug) return fail(res, 404, 'no existe');
+  if (!resource && req.method === 'PUT') return send(res, 200, await pages.fromZip(owner, slug, capped(req, pages.MAX_ZIP)));
+  if (!resource && req.method === 'PATCH') return send(res, 200, await pages.renameSite(owner, slug, (await readBody(req)).slug));
+  if (!resource && req.method === 'DELETE') return (await pages.unpublish(owner, slug), send(res, 200, { ok: true }));
+  if (resource === 'zip' && req.method === 'GET') return zipFolder(res, (await pages.zipArgs(owner, slug)).cwd, slug);
+  if (resource !== 'files') return fail(res, 404, 'no existe');
+  if (!route && req.method === 'GET') return send(res, 200, { files: await pages.files(owner, slug) });
+  if (route && req.method === 'GET') {
+    const target = await pages.file(owner, slug, decodeURIComponent(route));
+    if (!(await stat(target).catch(() => null))?.isFile()) return fail(res, 404, 'ese archivo no existe');
+    res.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
+    return createReadStream(target).on('error', () => res.end()).pipe(res);
+  }
+  if (route && req.method === 'PUT') return send(res, 200, await pages.writeFileTo(owner, slug, decodeURIComponent(route), capped(req, pages.MAX_FILE)));
+  if (route && req.method === 'DELETE') return send(res, 200, await pages.removeFile(owner, slug, decodeURIComponent(route)));
+  fail(res, 404, 'no existe');
 }
 
 // ---- rutas
@@ -255,10 +308,7 @@ const server = http.createServer(async (req, res) => {
     const owner = await authorize(req);
     if (!owner) return fail(res, 401, 'hace falta una clave de la API valida');
 
-    if (collection === 'pages' && req.method === 'DELETE') {
-      return (await pages.unpublish(owner, id)) ? send(res, 200, { ok: true }) : fail(res, 404, 'esa pagina no existe o no es tuya');
-    }
-    if (collection === 'pages') return fail(res, 404, 'no existe');
+    if (collection === 'pages') return await pagesRoute(req, res, owner, id, resource, rest);
 
     if (!id && req.method === 'POST') {
       const session = await sessions.create(owner);
@@ -272,11 +322,18 @@ const server = http.createServer(async (req, res) => {
     if (resource === 'run' && req.method === 'POST') return await run(req, res, session);
     if (resource === 'stop' && req.method === 'POST') return (active.get(session.id)?.abort(), send(res, 200, { ok: true }));
     if (resource === 'zip' && req.method === 'GET') return zip(res, session);
+    if (resource === 'pages' && rest.length === 1 && req.method === 'POST') {
+      const page = await pages.checkout(owner, rest[0], sessions.workspace(session.id));
+      session.page = page.slug;
+      await sessions.save(session);
+      return send(res, 200, page);
+    }
     if (resource === 'files' && !rest.length && req.method === 'GET') return send(res, 200, { files: await sessions.listFiles(session.id) });
     if (resource === 'files' && rest.length && req.method === 'PUT') return await upload(req, res, session, rest.join('/'));
     if (resource === 'files' && rest.length && req.method === 'GET') return await download(res, session, rest.join('/'));
     fail(res, 404, 'no existe');
   } catch (error) {
+    if (error instanceof pages.PageError) return res.headersSent ? res.end() : fail(res, error.status, error.message);
     console.error('[work]', error);
     if (!res.headersSent) fail(res, 500, 'error interno');
     else res.end();

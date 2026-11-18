@@ -587,8 +587,30 @@ export function createWork({ root, mascot, openKey }) {
   });
   sessions.onChange(renderSessions);
 
+  // Abre una pagina publicada en una sesion nueva: su codigo queda en pagina/ y el siguiente turno la republica.
+  async function editPage(slug) {
+    if (controller) return mascot.say('espera que termine', 2000);
+    if (!work.hasKey()) return locked();
+    discardBlank();
+    show(blank());
+    try {
+      await ensureRemote();
+      rememberPage(current, await work.checkout(current.remote, slug));
+    } catch (error) {
+      return report(error);
+    }
+    refreshFiles();
+    setPublishing(true);
+    prompt.value = `en mi pagina ${slug}, `;
+    resize();
+    syncSend();
+    prompt.focus();
+    mascot.say('tu pagina esta en pagina/, dime que cambio', 2600);
+    sound.play('chirp');
+  }
+
   const refresh = () => (renderThread(), renderSessions(), renderPages(), refreshFiles());
   renderTray();
   refresh();
-  return { refresh };
+  return { refresh, editPage };
 }

@@ -225,7 +225,10 @@ a {
 }
 
 .primary [data-icon],
-.ghost [data-icon] {
+.ghost [data-icon],
+.primary > .icon,
+.ghost > .icon {
+  flex: none;
   width: 16px;
   height: 16px;
 }
