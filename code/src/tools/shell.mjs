@@ -92,7 +92,7 @@ export const shell = {
 
     if (input.background) {
       const id = `bg${nextId++}`;
-      const job = { id, command, child, output: '', read: 0, exit: null };
+      const job = { id, number: nextId - 1, command, child, output: '', read: 0, exit: null, started: Date.now() };
       child.stdout.removeAllListeners('data');
       child.stderr.removeAllListeners('data');
       const keep = (chunk) => (job.output = (job.output + chunk.toString('utf8')).slice(-200_000));
@@ -166,4 +166,13 @@ export const shellKill = {
 };
 
 export const backgroundJobs = () => [...background.values()];
+
+// Detiene un proceso en segundo plano (desde la barra de abajo o /jobs).
+export function stopJob(id) {
+  const job = background.get(id);
+  if (!job) return false;
+  killTree(job.child);
+  background.delete(id);
+  return true;
+}
 export const killAll = () => background.forEach((job) => killTree(job.child));

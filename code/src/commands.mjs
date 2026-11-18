@@ -12,7 +12,6 @@ import { schema } from './tools/index.mjs';
 import { catalog, displayName, providerOf } from './providers.mjs';
 import { openConfig, pickEffort, pickModel, providersMenu, sessionOptions, setKey } from './settings-ui.mjs';
 import { servers } from './tools/mcp.mjs';
-import { backgroundJobs } from './tools/shell.mjs';
 import { update } from './updater.mjs';
 import { notice, todoLines } from './ui/blocks.mjs';
 import { bold, c, dim, pad } from './ui/term.mjs';
@@ -45,6 +44,7 @@ export const COMMANDS = [
   { name: 'context', description: 'en que se esta usando el contexto' },
   { name: 'import', description: 'importar una conversacion de Claude Code o Codex' },
   { name: 'tp', description: 'traer una conversacion de bichi work (web) con sus archivos' },
+  { name: 'bichito', description: 'que pase el bichito por la barra (/bichito zzz para verlo dormir)' },
   { name: 'skills', description: 'skills disponibles (.bichi/skills y .claude/skills)' },
   { name: 'todos', description: 'ver la lista de tareas' },
   { name: 'init', description: 'crear BICHI.md con lo que bichi debe saber del proyecto' },
@@ -55,7 +55,7 @@ export const COMMANDS = [
   { name: 'mcp', description: 'servidores MCP conectados' },
   { name: 'permissions', description: 'reglas de permisos activas' },
   { name: 'status', description: 'modelo, contexto, tokens y version' },
-  { name: 'jobs', description: 'procesos en segundo plano' },
+  { name: 'jobs', description: 'shells en segundo plano: ver lo que hacen o detenerlos' },
   { name: 'export', description: 'guardar la conversacion en un .md' },
   { name: 'copy', description: 'copiar la ultima respuesta' },
   { name: 'rename', description: 'cambiar el nombre de la conversacion' },
@@ -168,6 +168,9 @@ export async function runCommand(app, name, args, raw) {
       return importChat(app, args);
     case 'tp':
       return teleport(app);
+    case 'bichito':
+      if (/^(z+|dormir|duerme|sleep)$/i.test(args)) return app.pet.sleep();
+      return app.pet.walk();
     case 'compact':
       return app.run(async () => {
         const done = await app.agent.compact(args, app.agent.controller?.signal);
@@ -248,10 +251,8 @@ export async function runCommand(app, name, args, raw) {
         ].join('\n'),
       );
     }
-    case 'jobs': {
-      const jobs = backgroundJobs();
-      return print(jobs.length ? ['', ...jobs.map((job) => `  ${job.exit === null ? c.ok('●') : c.soft('○')} ${c.sky(job.id)} ${job.command}`)].join('\n') : notice('no hay procesos en segundo plano'));
-    }
+    case 'jobs':
+      return app.jobsMenu();
     case 'export': {
       const file = path.resolve(app.cwd, args || `bichi-${app.session.id}.md`);
       const body = app.agent.messages

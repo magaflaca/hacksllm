@@ -13,7 +13,7 @@ import { listSkills } from './core/skills.mjs';
 import { displayName } from './providers.mjs';
 import { COMMANDS, runCommand } from './commands.mjs';
 import { listFiles } from './tools/files.mjs';
-import { killAll, shell as shellTool } from './tools/shell.mjs';
+import { backgroundJobs, killAll, shell as shellTool, stopJob } from './tools/shell.mjs';
 import { beetle, logo } from './ui/art.mjs';
 import { deniedBlock, notice, READ_TOOLS, readGroupBlock, reasoningBlock, todoLines, toolBlock, toolTitle, userBlock } from './ui/blocks.mjs';
 import { renderDiff } from './ui/diff.mjs';
@@ -22,13 +22,14 @@ import { FullScreen, parseMouse } from './ui/fullscreen.mjs';
 import { createDecoder } from './ui/keys.mjs';
 import { renderMarkdown } from './ui/markdown.mjs';
 import { bg, bold, c, dim, fg, pad, shimmer, strip, truncate, width, wrap } from './ui/term.mjs';
+import { Pet, PET_WIDTH } from './ui/pet.mjs';
 import { linksIn, paintSelection, selectedText, Transcript } from './ui/transcript.mjs';
 import { box, Field, HistorySearch, Menu } from './ui/widgets.mjs';
 
 const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const VERBS = ['Bichiando', 'Rebuscando', 'Tramando', 'Cavilando', 'Zumbando', 'Escarbando', 'Hilando', 'Revoloteando', 'Maquinando', 'Rumiando', 'Tejiendo', 'Cocinando', 'Afinando', 'Husmeando', 'Garabateando'];
 const EFFORT = { low: ['◔', 'bajo'], medium: ['◑', 'medio'], high: ['●', 'alto'] };
-const DONE_VERBS = ['Bichio', 'Tramo', 'Cocino', 'Rumio', 'Maquino', 'Tejio', 'Husmeo', 'Zumbo', 'Escarbo', 'Hilo'];
+const DONE_VERBS = ['Bichió', 'Tramó', 'Cocinó', 'Rumió', 'Maquinó', 'Tejió', 'Husmeó', 'Zumbó', 'Escarbó', 'Hiló'];
 const MAX_INPUT_ROWS = 10;
 const GOAL_ROUNDS = 12;
 
@@ -57,6 +58,9 @@ export class App {
     this.lastEsc = 0;
     this.lastCtrlC = 0;
     this.pendingContext = [];
+    this.pendingSteer = [];
+    this.pet = new Pet(() => this.schedule());
+    this.pet.busy = () => Boolean(this.running || this.overlay);
     this.images = new Map();
     this.imageCount = 0;
     this.tick = 0;
@@ -108,6 +112,8 @@ export class App {
     this.refreshFiles();
     this.ticker = setInterval(() => {
       this.tick++;
+      // Con shells en segundo plano, la barra se refresca para mostrar si siguen vivos.
+      if (!this.running && this.tick % 20 === 0 && backgroundJobs().length) this.schedule();
       if (this.running) {
         for (const item of this.toolItems.values()) item.update();
         this.thinking?.update();
@@ -229,6 +235,20 @@ export class App {
 
   space() {}
 
+  // Mensaje del usuario (o comando) con fondo sombreado de lado a lado. `pending`: mandado mientras bichi
+  // trabajaba y aun sin leer; tiene otro tono hasta que entra en el siguiente paso.
+  addUser(text, { pending = false } = {}) {
+    const item = this.add((w) => {
+      const shade = bg(item.pending ? '#3b2f63' : '#262c4d');
+      const lines = userBlock(text, w - 2).map(highlightTags);
+      if (item.pending) lines.push(`  ${dim('en cola · se lee en el siguiente paso')}`);
+      return lines.map((line) => shade(pad(line, w - 1)));
+    });
+    item.user = true;
+    item.pending = pending;
+    return item;
+  }
+
   note(text, color = c.soft) {
     this.add(() => [notice(text, color)], { gap: 0 });
   }
@@ -257,7 +277,7 @@ export class App {
       if (message.role === 'user' && typeof message.content === 'string') {
         const text = stripAttachments(message.content);
         if (/^\((Esta conversacion se resumio|Se recorto|Conversacion importada)/.test(text)) this.add(() => [notice('conversacion anterior resumida', c.plum)]);
-        else this.add((w) => userBlock(text.replace(/^\((mensaje del usuario|sigue con el objetivo|nota)[^)]*\)\n?/, ''), w).map(highlightTags)).user = true;
+        else this.addUser(text.replace(/^\((mensaje del usuario|sigue con el objetivo|nota)[^)]*\)\n?/, ''));
       } else if (message.role === 'assistant') {
         if (message.content && message.content !== 'Entendido, sigo desde aqui.') {
           const text = message.content;
@@ -340,7 +360,6 @@ export class App {
         todoLines(this.agent.todos).forEach((line, i) => lines.push(`  ${i ? ' ' : c.soft('╰')}  ${line}`));
       }
     }
-    for (const text of this.agent.queue) lines.push(c.soft(`  › ${truncate(text.replace(/\s+/g, ' '), W - 20)}  (en cola)`));
     const rule = c.soft('─'.repeat(W - 1));
     if (this.overlay) {
       const rendered = this.overlay.render(W);
@@ -356,13 +375,25 @@ export class App {
       lines.push(...this.suggestionLines(W));
       const [glyph, effort] = EFFORT[this.config.effort] ?? EFFORT.medium;
       const right = `${c.sky(this.modelLabel())} ${c.soft('·')} ${c.soft(`${glyph} ${effort} · /effort`)}`;
-      lines.push(' '.repeat(Math.max(0, W - 2 - width(right))) + right);
-      lines.push(rule);
+      const rightStart = Math.max(0, W - 2 - width(right));
+      // La mascota va sobre la linea de la entrada, sin pisar el texto de la derecha.
+      const pet = this.pet?.sprite(rightStart - PET_WIDTH - 8);
+      if (pet && pet.x + PET_WIDTH + 8 <= rightStart) {
+        this.clickRows.pet = lines.length;
+        const top = `${' '.repeat(pet.x)}${pet.lines[0]} ${pet.extra}`;
+        lines.push(top + ' '.repeat(Math.max(1, rightStart - width(top))) + right);
+        lines.push(`${c.soft('─'.repeat(pet.x))}${pet.lines[1]}${c.soft('─'.repeat(Math.max(0, W - 1 - pet.x - PET_WIDTH)))}`);
+      } else {
+        this.clickRows.pet = undefined;
+        lines.push(' '.repeat(rightStart) + right);
+        lines.push(rule);
+      }
       const input = this.inputLines(W);
       cursor = { row: lines.length + input.cursor.row, col: input.cursor.col };
       lines.push(...input.lines);
       lines.push(rule);
     }
+    this.clickRows.footer = lines.length;
     lines.push(this.footer(W));
     return { lines, cursor };
   }
@@ -397,13 +428,54 @@ export class App {
     else if (this.mode === 'normal') left = c.soft('  ? atajos · shift+tab para cambiar de modo');
     else left = `  ${c[info.color](`▸▸ ${info.label}`)} ${c.soft('(shift+tab para cambiar)')}`;
     const parts = [];
+    // Shells en segundo plano (servidores, watchers): clic para ver lo que hacen o detenerlos.
+    const alive = backgroundJobs().filter((job) => job.exit === null).length;
+    const shells = alive ? `◉ ${alive} ${alive === 1 ? 'shell' : 'shells'} activo${alive === 1 ? '' : 's'}` : '';
+    if (shells) parts.push(c.ok(shells));
     if (this.agent.subagents) parts.push(c.plum(`← ${this.agent.subagents} ${this.agent.subagents === 1 ? 'agente' : 'agentes'}`));
     if (this.agent.goal && !this.agent.goal.done) parts.push(c.ok(`◎ objetivo · ronda ${this.agent.goal.rounds + 1}`));
     const ctx = Math.min(100, Math.round((this.agent.contextUsed() / this.agent.contextLimit()) * 100));
     if (ctx >= 30) parts.push(ctx >= 65 ? c.warn(`contexto ${ctx}%`) : c.soft(`contexto ${ctx}%`));
     const right = parts.join(c.soft(' · '));
     const gap = W - 2 - width(left) - width(right);
-    return gap > 1 ? `${left}${' '.repeat(gap)}${right}` : left;
+    if (gap <= 1) return left;
+    if (shells) this.clickRows.shells = { from: width(left) + gap, to: width(left) + gap + width(shells) };
+    return `${left}${' '.repeat(gap)}${right}`;
+  }
+
+  // Lista de shells en segundo plano: elegir uno para ver su salida o detenerlo.
+  async jobsMenu() {
+    const jobs = backgroundJobs();
+    if (!jobs.length) return this.flash('no hay shells en segundo plano');
+    const id = await this.choose({
+      title: 'shells en segundo plano',
+      options: jobs.map((job) => ({
+        label: `shell ${job.number} · ${truncate(job.command, 60)}`,
+        hint: job.exit === null ? `corriendo hace ${clock(Math.round((Date.now() - job.started) / 1000))}` : `termino (codigo ${job.exit})`,
+        value: job.id,
+      })),
+      escape: null,
+    });
+    if (!id) return;
+    const job = jobs.find((item) => item.id === id);
+    const action = await this.choose({
+      title: `shell ${job.number}`,
+      body: [c.ice(job.command), '', ...job.output.trimEnd().split('\n').slice(-12).map((line) => dim(strip(line)))],
+      options: [
+        { label: 'ver la salida en la conversacion', value: 'show' },
+        ...(job.exit === null ? [{ label: 'detenerlo', value: 'stop' }] : []),
+        { label: 'volver', value: null, hint: 'esc' },
+      ],
+      escape: null,
+    });
+    if (action === 'stop') {
+      stopJob(id);
+      this.note(`shell ${job.number} detenido`, c.ok);
+    } else if (action === 'show') {
+      const lines = job.output.trimEnd().split('\n').slice(-300);
+      this.add(() => [`${c.ok('●')} ${bold(`Shell ${job.number}`)} ${c.soft(job.command)}`, ...lines.map((line) => `    ${dim(strip(line))}`)]);
+    }
+    this.render();
   }
 
   suggestionLines(W) {
@@ -537,6 +609,10 @@ export class App {
   clickBottom(row, col) {
     const jump = this.clickRows?.jump;
     if (jump && row === jump.row && col >= jump.from && col < jump.to) return this.jumpToEnd();
+    const petRow = this.clickRows?.pet;
+    if (petRow !== undefined && (row === petRow || row === petRow + 1) && this.pet.hit(col)) return this.pet.leave();
+    const shells = this.clickRows?.shells;
+    if (shells && row === this.clickRows.footer && col >= shells.from && col < shells.to) return this.jobsMenu();
     if (this.overlay?.click && this.clickRows.overlay !== undefined) return this.overlay.click(row - this.clickRows.overlay);
     const list = this.suggestions;
     if (list && this.clickRows.suggestions !== undefined) {
@@ -571,7 +647,11 @@ export class App {
   // ---------- teclas ----------
 
   async onKey(key) {
-    if (key.name === 'mouse') return this.onMouse(parseMouse(key.sequence));
+    if (key.name === 'mouse') {
+      this.pet.lastInput = Date.now();
+      return this.onMouse(parseMouse(key.sequence));
+    }
+    this.pet.input();
     this.selection = null;
     if (key.name === 'pageup') return this.scroll(-(this.viewH - 2));
     if (key.name === 'pagedown') return this.scroll(this.viewH - 2);
@@ -735,11 +815,13 @@ export class App {
     if (this.running) {
       if (text.startsWith('/')) return this.flash('espera a que termine (o pulsa esc) para usar comandos');
       this.agent.steer(text);
+      this.pendingSteer.push(this.addUser(text, { pending: true }));
       return this.render();
     }
     if (text.startsWith('/')) {
       const [command, ...rest] = text.slice(1).split(/\s+/);
       this.render();
+      this.addUser(text);
       return runCommand(this, command.toLowerCase(), rest.join(' ').trim(), text);
     }
     if (text.startsWith('!')) return this.runShell(text.slice(1).trim());
@@ -751,7 +833,7 @@ export class App {
     this.follow = true;
     if (!this.session.title && !display.startsWith('/')) this.session.title = display.replace(/\[Imagen #\d+\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
     const images = [...this.images].filter(([tag]) => text.includes(tag));
-    this.add((w) => userBlock(display, w).map(highlightTags)).user = true;
+    this.addUser(display);
     await this.run(async () => {
       let content = this.withContext(text);
       for (const [tag, image] of images) {
@@ -948,7 +1030,12 @@ export class App {
       onNotice: (text) => this.note(text, c.warn),
       onSteer: (text) => {
         this.endText();
-        this.add((w) => userBlock(text, w)).user = true;
+        // Ya lo leyo: el mensaje en cola pasa al sombreado normal.
+        const queued = this.pendingSteer.shift();
+        if (queued) {
+          queued.pending = false;
+          queued.update();
+        } else this.addUser(text);
       },
       onCompact: (phase) => {
         if (phase === 'start') this.note('el contexto se esta llenando: resumiendo la conversacion con los modelos gratis…', c.plum);
