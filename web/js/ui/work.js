@@ -53,6 +53,8 @@ export function createWork({ root, mascot, openKey }) {
   let current = sessions.all()[0] ?? blank();
   let pending = [];
   let controller = null;
+  let running = null;
+  let redirecting = false;
   let publishing = false;
   const alive = new Set();
 
@@ -64,11 +66,19 @@ export function createWork({ root, mascot, openKey }) {
   const stored = () => Boolean(sessions.find(current.id));
   const persist = () => stored() && sessions.touch(current);
 
+  // Mientras trabaja, el boton detiene; si hay texto escrito, redirige el trabajo hacia ese mensaje.
+  const syncSend = () => {
+    const stop = Boolean(controller) && !prompt.value.trim();
+    send.replaceChildren(icon(stop ? 'stop' : 'send'));
+    send.setAttribute('aria-label', stop ? 'Detener' : controller ? 'Redirigir el trabajo' : 'Enviar');
+    send.title = stop ? 'Detener' : controller ? 'Redirigir el trabajo' : 'Enviar';
+    send.classList.toggle('is-stop', stop);
+  };
+  const hint = root.querySelector('.hint');
   const setBusy = (busy) => {
-    send.replaceChildren(icon(busy ? 'stop' : 'send'));
-    send.setAttribute('aria-label', busy ? 'Detener' : 'Enviar');
-    send.classList.toggle('is-stop', busy);
     root.classList.toggle('is-busy', busy);
+    hint.textContent = busy ? 'escribe para redirigir el trabajo' : 'arrastra archivos aqui';
+    syncSend();
   };
 
   const resize = () => {
@@ -396,6 +406,12 @@ export function createWork({ root, mascot, openKey }) {
   }
 
   function paint(node, message, live) {
+    const before = node.querySelector('.step-list');
+    const kept = before && {
+      open: node.querySelector('details.steps').open,
+      top: before.scrollTop,
+      atEnd: before.scrollHeight - before.scrollTop - before.clientHeight < 24,
+    };
     const parts = [stepsBlock(message.steps, live, message.status)];
     if (message.content) parts.push(...markdown(tidy(message.content)));
     else if (live) parts.push(h('span.typing', {}, h('i'), h('i'), h('i')));
@@ -404,6 +420,10 @@ export function createWork({ root, mascot, openKey }) {
     parts.push(deliverables(message.files));
     if (message.error) parts.push(h('p.msg-error.px', {}, message.error));
     node.querySelector('.msg-body').replaceChildren(...parts.filter(Boolean));
+    const list = node.querySelector('.step-list');
+    if (!list) return;
+    if (kept) node.querySelector('details.steps').open = kept.open;
+    list.scrollTop = !kept || kept.atEnd ? list.scrollHeight : kept.top;
   }
 
   const userNode = (message) =>
@@ -443,7 +463,7 @@ export function createWork({ root, mascot, openKey }) {
       .slice(-CONTEXT_TURNS)
       .map(({ role, content }) => ({ role, text: content.slice(0, 2000) }));
 
-  async function answer(message, uploads, publish) {
+  async function answer(message, uploads, publish, redirect) {
     const session = current;
     const reply = { role: 'assistant', content: '', steps: [], files: [], status: '' };
     const node = botNode(reply, true);
@@ -455,7 +475,7 @@ export function createWork({ root, mascot, openKey }) {
     let frame = 0;
     const repaint = () => (frame ||= requestAnimationFrame(() => ((frame = 0), paint(node, reply, true), scrollDown())));
     try {
-      const body = { message, effort: effort.value, uploads, context: context(), publish, page: session.pages?.[0]?.slug };
+      const body = { message, effort: effort.value, uploads, context: context(), publish, redirect, page: session.pages?.[0]?.slug };
       for await (const event of work.run(session.remote, body, controller.signal)) {
         if (event.type === 'status') reply.status = event.text;
         else if (event.type === 'text') reply.content += event.delta;
@@ -480,7 +500,10 @@ export function createWork({ root, mascot, openKey }) {
       mascot.say(reply.page ? 'ya esta en linea' : reply.files.length ? 'aqui tienes' : 'listo', 1800);
       sound.play('done');
     } catch (error) {
-      if (error.name === 'AbortError') mascot.setMood('idle');
+      if (error.name === 'AbortError') {
+        mascot.setMood('idle');
+        if (redirecting) reply.notice = 'lo deje aqui para seguir tu nueva indicacion';
+      }
       else {
         reply.error ||= error.status === 401 ? 'la clave de la API no es valida' : `algo fallo: ${error.message}`;
         mascot.setMood('sad', 2600);
@@ -500,12 +523,18 @@ export function createWork({ root, mascot, openKey }) {
 
   async function submit(event) {
     event.preventDefault();
+    const content = prompt.value.trim();
+    let redirect = false;
     if (controller) {
       work.stop(current.remote);
-      return controller.abort();
+      if (!content) return controller.abort();
+      redirecting = redirect = true;
+      mascot.say('vale, cambio de rumbo', 2000);
+      controller.abort();
+      await running;
+      redirecting = false;
     }
     if (!work.hasKey()) return locked();
-    const content = prompt.value.trim();
     if (!content) {
       mascot.say('cuentame que hacemos', 2000);
       return sound.play('tap');
@@ -525,16 +554,17 @@ export function createWork({ root, mascot, openKey }) {
     thread.append(userNode(message));
     prompt.value = '';
     resize();
+    syncSend();
     sound.play('send');
     const publish = publishing;
     setPublishing(false);
-    answer(content, uploads, publish);
+    running = answer(content, uploads, publish, redirect);
   }
 
   effort.replaceChildren(...EFFORTS.map(([value, label]) => h('option', { value, selected: value === store.get('workEffort', 'medium') }, label)));
   effort.addEventListener('change', () => (store.set('workEffort', effort.value), sound.play('select')));
   form.addEventListener('submit', submit);
-  prompt.addEventListener('input', resize);
+  prompt.addEventListener('input', () => (resize(), syncSend()));
   prompt.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && matchMedia('(pointer: fine)').matches) submit(event);
   });

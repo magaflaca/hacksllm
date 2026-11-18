@@ -37,10 +37,17 @@ export const work = {
     });
   },
 
+  // Tras cortar un turno, el servidor tarda unos segundos en soltar la sesion: el 409 se reintenta.
   async *run(id, body, signal) {
-    const response = await fetch(`${BASE}/${id}/run`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body), signal });
-    if (!response.ok) throw await failure(response);
-    yield* sseEvents(response.body);
+    for (let attempt = 0; ; attempt++) {
+      const response = await fetch(`${BASE}/${id}/run`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body), signal });
+      if (response.status === 409 && attempt < 40) {
+        await new Promise((resolve) => setTimeout(resolve, 750));
+        continue;
+      }
+      if (!response.ok) throw await failure(response);
+      return yield* sseEvents(response.body);
+    }
   },
 
   // Un archivo del espacio, o el zip de todo si no se pasa ruta.

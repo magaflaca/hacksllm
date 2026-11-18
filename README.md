@@ -79,6 +79,8 @@ web (#/work) -> Pages /work/* -> nginx /work/ -> hacksllm-work :20130 (usuario h
   el combo `nemotron-3-ultra` de OmniRoute con la clave `work`. Un motor que falla por cupo descansa 30 min.
   La web nunca muestra que modelo trabajo.
 - Un turno a la vez (`WORK_CONCURRENCY`); los demas esperan en cola.
+- Mientras trabaja se le puede escribir: el turno en curso se corta y empieza otro en la misma conversacion, con
+  los archivos como quedaron y la nueva indicacion (agy no admite mensajes a mitad de turno).
 - El agente necesita la sesion de Google de agy, asi que quien tenga una clave podria leerla desde su espacio:
   reparte claves solo a gente de confianza.
 

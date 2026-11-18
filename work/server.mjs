@@ -88,12 +88,13 @@ const tidy = (id, text) =>
     .replaceAll(sessions.workspace(id), '.')
     .replaceAll('/srv/hacksllm-work', '~');
 
-function buildPrompt(session, message, uploads, fresh, publish) {
+function buildPrompt(session, message, uploads, fresh, publish, redirect) {
   const parts = [PREAMBLE];
   if (fresh && session.history.length) {
     const recent = session.history.slice(-HISTORY_TURNS).map(({ role, text }) => `${role === 'user' ? 'usuario' : 'bichi'}: ${text}`);
     parts.push(`[conversacion previa de esta sesion]\n${recent.join('\n\n')}`);
   }
+  if (redirect) parts.push('[el usuario corto el turno anterior para redirigir el trabajo: revisa como quedaron los archivos y sigue con esta indicacion]');
   if (publish) parts.push('[este turno el usuario pidio publicarlo como bichi pagina]');
   if (uploads.length) parts.push(`[archivos nuevos del usuario]\n${uploads.map((name) => `- ${name}`).join('\n')}`);
   parts.push(`[mensaje del usuario]\n${message}`);
@@ -123,7 +124,7 @@ async function publishPage(session, requested, emit) {
 // ---- turno
 
 async function run(req, res, session) {
-  const { message = '', effort = 'medium', uploads = [], context = [], publish = false, page = '' } = await readJson(req);
+  const { message = '', effort = 'medium', uploads = [], context = [], publish = false, redirect = false, page = '' } = await readJson(req);
   if (!session.page && page) session.page = pages.slugify(page);
   if (!session.history.length && Array.isArray(context)) {
     session.history = context
@@ -155,7 +156,7 @@ async function run(req, res, session) {
       if (controller.signal.aborted) break;
       if (index) emit({ type: 'status', text: 'sigo por otro camino' });
       const resume = session.resume[engine.key];
-      const prompt = buildPrompt(session, message, Array.isArray(uploads) ? uploads.map(String).slice(0, 50) : [], !resume || index > 0, publish);
+      const prompt = buildPrompt(session, message, Array.isArray(uploads) ? uploads.map(String).slice(0, 50) : [], !resume || index > 0, publish, redirect);
       const result = await runEngine(engine, {
         session: session.id,
         effort: EFFORTS.has(effort) ? effort : 'medium',
