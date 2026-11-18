@@ -29,7 +29,7 @@ const SYSTEMS = {
 const FEATURES = [
   ['sky', 'una app en tu terminal', 'ocupa la terminal entera: historial con scroll y raton, seleccion que copia, links que se abren con un clic y comandos que aparecen sobre la entrada.'],
   ['mint', 'nunca se queda sin modelo', 'en auto empieza por el mas rapido y, si uno se agota, sigue con el siguiente. el contexto se resume solo con los modelos gratis.'],
-  ['butter', 'tu decides cuanto pregunta', 'shift+tab cambia de modo: normal, acepta ediciones, plan (propone antes de tocar) o sin preguntas. esc esc vuelve atras, tambien el codigo.'],
+  ['butter', 'tu decides cuanto pregunta', 'shift+tab cambia de modo: normal, acepta ediciones, plan (propone antes de tocar) o sin preguntas. /rewind vuelve atras, tambien el codigo.'],
   ['blush', 'agentes, skills y objetivos', 'subagentes en paralelo, skills (las de Claude Code tambien sirven) y /goal para que trabaje solo hasta cumplir algo.'],
   ['sky', 'trae tus conversaciones', '/import abre charlas de Claude Code o Codex y /tp las de bichi work con sus archivos, resumidas para que quepan.'],
   ['mint', 'imagenes y tus propias claves', 'alt+v o pega la ruta de una imagen y bichi la mira. ademas de hacksllm puedes conectar NVIDIA, Mistral, Groq, OpenRouter y mas.'],
@@ -38,7 +38,8 @@ const FEATURES = [
 const KEYS = [
   ['shift+tab', 'cambiar de modo'],
   ['esc', 'interrumpir'],
-  ['esc esc', 'volver a un mensaje anterior'],
+  ['esc esc', 'salir de bichi'],
+  ['/rewind', 'volver a un mensaje anterior'],
   ['@archivo', 'adjuntar un archivo'],
   ['!comando', 'ejecutar en la shell'],
   ['#nota', 'guardar en la memoria'],
@@ -95,7 +96,7 @@ function terminal() {
     h(
       'div.term-body',
       {},
-      h('div.term-banner', {}, beetle, h('div', {}, logo, h('div.t-soft', {}, 'v1.2.0 · tu bicho programador'))),
+      h('div.term-banner', {}, beetle, h('div', {}, logo, h('div.t-soft', {}, 'v1.3.1 · tu bicho programador'))),
       ...lines,
       h('div.term-input', { style: `--i:${SCRIPT.length}` }, h('span.t-brand', {}, '›'), h('span.term-caret')),
       h('div.term-status', { style: `--i:${SCRIPT.length}` }, h('span.t-plum', {}, '▸▸ acepta ediciones'), h('span.t-sky', {}, 'auto · bichi-turbo')),

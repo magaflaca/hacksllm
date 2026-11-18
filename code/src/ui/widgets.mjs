@@ -33,17 +33,27 @@ export class Menu {
     }
   }
 
+  // Clic en la fila `row` de la caja: elige esa opcion.
+  click(row) {
+    const index = this.optionRows?.indexOf(row) ?? -1;
+    if (index < 0) return;
+    this.index = index;
+    this.done(this.options[index].value);
+  }
+
   render(columns) {
     const w = Math.min(columns - 1, 100);
     const inner = w - 4;
     const lines = [];
     for (const line of this.body) lines.push(...wrap(line, inner));
     if (this.body.length) lines.push('');
+    this.optionRows = []; // fila dentro de la caja (+1 por el borde de arriba) de cada opcion, para los clics
     this.options.forEach((option, i) => {
       const active = i === this.index;
       const number = c.soft(`${i + 1}.`);
       const label = typeof option.label === 'function' ? option.label() : option.label;
       const text = `${active ? c.brand('❯') : ' '} ${number} ${active ? bold(c.sky(label)) : label}${option.hint ? `  ${dim(option.hint)}` : ''}`;
+      this.optionRows.push(lines.length + 1);
       lines.push(text);
     });
     if (this.footer) lines.push('', dim(this.footer));

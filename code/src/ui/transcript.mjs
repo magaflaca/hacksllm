@@ -30,9 +30,15 @@ export class Transcript {
     this.version++;
   }
 
+  // Bloque que ocupa una linea del historial (para los clics).
+  itemAt(line) {
+    return this.ranges?.find((range) => line >= range.start && line < range.end)?.item ?? null;
+  }
+
   lines(width) {
     if (this.cache.width === width && this.cache.version === this.version) return this.cache.lines;
     const out = [];
+    this.ranges = [];
     for (const item of this.items) {
       if (!item.cache || item.cache.width !== width || item.cache.version !== item.version) {
         let lines;
@@ -48,6 +54,7 @@ export class Transcript {
       }
       if (!item.cache.lines.length) continue;
       if (out.length) for (let i = 0; i < item.gap; i++) out.push('');
+      this.ranges.push({ item, start: out.length, end: out.length + item.cache.lines.length });
       out.push(...item.cache.lines);
     }
     this.cache = { width, version: this.version, lines: out };

@@ -45,25 +45,30 @@ export function toolBlock(view, outcome, { columns, verbose }) {
     lines.push(...result(todoLines(outcome.todos)));
     return lines;
   }
-  if (outcome.diff && (name === 'edit' || (name === 'write' && !outcome.created))) {
-    lines.push(...result([c.soft(outcome.summary), ...renderDiff(outcome.diff, { columns: columns - 6, maxLines: verbose ? 400 : 24 })]));
+  if (outcome.diff && (name === 'edit' || (name === 'write' && (!outcome.created || verbose)))) {
+    lines.push(...result([c.soft(outcome.summary), ...renderDiff(outcome.diff, { columns: columns - 6, maxLines: verbose ? 2000 : 16 })]));
+    return lines;
+  }
+  if (outcome.diff && name === 'write') {
+    lines.push(...result([`${c.soft(outcome.summary)} ${dim('· clic para ver')}`]));
     return lines;
   }
   if (name === 'shell' && outcome.output !== undefined) {
     const output = outcome.output.split('\n').filter((line, i, all) => line || i < all.length - 1);
-    const keep = verbose ? output : output.slice(0, 5);
-    const body = keep.length ? keep.map((line) => dim(line.length > columns - 8 ? `${line.slice(0, columns - 9)}…` : line)) : [dim('(sin salida)')];
-    if (output.length > keep.length) body.push(c.soft(`… +${output.length - keep.length} lineas (ctrl+o para ver todo)`));
+    const keep = verbose ? output.slice(-2000) : output.slice(0, 5);
+    const body = keep.length ? keep.map((line) => dim(verbose ? line : line.length > columns - 8 ? `${line.slice(0, columns - 9)}…` : line)) : [dim('(sin salida)')];
+    if (output.length > keep.length) body.push(c.soft(`… +${output.length - keep.length} lineas · clic para ver todo`));
     if (outcome.summary) body.push(outcome.exit ? c.warn(outcome.summary) : c.soft(outcome.summary));
     lines.push(...result(body));
     return lines;
   }
   if (verbose && typeof outcome.content === 'string' && name !== 'write') {
-    const body = outcome.content.split('\n').slice(0, 200).map((line) => dim(line));
+    const body = outcome.content.split('\n').slice(0, 2000).map((line) => dim(line));
     lines.push(...result(body));
     return lines;
   }
-  lines.push(...result([c.soft(outcome.summary ?? 'listo')]));
+  const more = typeof outcome.content === 'string' && outcome.content.length > 80 && !outcome.todos ? ` ${dim('· clic para ver')}` : '';
+  lines.push(...result([`${c.soft(outcome.summary ?? 'listo')}${more}`]));
   return lines;
 }
 
@@ -71,11 +76,31 @@ export function deniedBlock(view, reason) {
   return [toolTitle(view, 'denied'), ...result([c.warn(reason)])];
 }
 
-export function reasoningBlock(text, seconds, columns) {
-  const head = `${c.plum('»')} ${dim(italic(`penso ${seconds}s`))}`;
-  if (!text) return [head];
+// Razonamiento: plegado muestra cuanto penso; desplegado (clic o ctrl+o), lo que penso.
+export function reasoningBlock(text, seconds, columns, expanded = false) {
+  const hint = text?.trim() ? dim(expanded ? ' · clic para plegar' : ' · clic para ver') : '';
+  const head = `${c.plum('»')} ${dim(italic(`penso ${seconds}s`))}${hint}`;
+  if (!expanded || !text?.trim()) return [head];
   return [head, ...text.trim().split('\n').flatMap((line) => wrap(dim(italic(line)), columns - 4)).map((line) => `  ${line}`)];
 }
+
+const READ_VERBS = { read: ['leyo', 'archivo', 'archivos'], ls: ['listo', 'carpeta', 'carpetas'], glob: ['busco', 'patron', 'patrones'], grep: ['busco', 'texto', 'textos'], web_fetch: ['abrio', 'pagina', 'paginas'], web_search: ['busco en la web', 'vez', 'veces'] };
+
+// Varias lecturas seguidas se agrupan en una linea ("leyo 4 archivos, busco 2 textos"); clic para verlas.
+export function readGroupBlock(entries, columns, expanded) {
+  const counts = new Map();
+  for (const { view } of entries) counts.set(view.tool.name, (counts.get(view.tool.name) ?? 0) + 1);
+  const parts = [...counts].map(([name, count]) => {
+    const [verb, one, many] = READ_VERBS[name] ?? ['uso', name, name];
+    return `${verb} ${count} ${count === 1 ? one : many}`;
+  });
+  const failed = entries.some(({ outcome }) => outcome.error);
+  const head = `${failed ? c.warn('●') : c.ok('●')} ${bold(parts.join(', ').replace(/^./, (ch) => ch.toUpperCase()))}${dim(expanded ? ' · clic para plegar' : ' · clic para ver')}`;
+  if (!expanded) return [head];
+  return [head, ...entries.flatMap(({ view, outcome }) => result([`${view.label.title} ${c.soft(view.label.arg ?? '')} ${outcome.error ? c.err(outcome.error) : dim(`· ${outcome.summary ?? 'listo'}`)}`]))];
+}
+
+export const READ_TOOLS = new Set(Object.keys(READ_VERBS));
 
 export const notice = (text, color = c.soft) => `${color('  ╰')}  ${color(text)}`;
 

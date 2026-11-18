@@ -40,7 +40,7 @@ export const COMMANDS = [
   { name: 'compact', description: 'resumir la conversacion para liberar contexto' },
   { name: 'resume', description: 'retomar una conversacion anterior' },
   { name: 'undo', description: 'deshacer los cambios en archivos del ultimo turno' },
-  { name: 'rewind', description: 'volver a un mensaje anterior, con o sin el codigo (esc esc)' },
+  { name: 'rewind', description: 'volver a un mensaje anterior, con o sin el codigo' },
   { name: 'goal', description: 'objetivo: bichi trabaja solo hasta cumplirlo' },
   { name: 'context', description: 'en que se esta usando el contexto' },
   { name: 'import', description: 'importar una conversacion de Claude Code o Codex' },

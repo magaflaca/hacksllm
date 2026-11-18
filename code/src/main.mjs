@@ -124,7 +124,7 @@ async function main() {
   const { App } = await import('./app.mjs');
   const extraTools = [];
   const app = new App({ config, state, router, cwd, settings, extraTools, session });
-  if (options.mode) app.mode = options.mode;
+  if (options.mode) app._mode = options.mode; // un --plan o --yolo de la linea de comandos no se guarda
   process.on('uncaughtException', (error) => {
     app.term.leave();
     process.stderr.write(`\n${c.err('error inesperado:')} ${error.stack ?? error.message}\n`);

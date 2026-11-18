@@ -15,19 +15,20 @@ import { COMMANDS, runCommand } from './commands.mjs';
 import { listFiles } from './tools/files.mjs';
 import { killAll, shell as shellTool } from './tools/shell.mjs';
 import { beetle, logo } from './ui/art.mjs';
-import { deniedBlock, notice, reasoningBlock, todoLines, toolBlock, toolTitle, userBlock } from './ui/blocks.mjs';
+import { deniedBlock, notice, READ_TOOLS, readGroupBlock, reasoningBlock, todoLines, toolBlock, toolTitle, userBlock } from './ui/blocks.mjs';
 import { renderDiff } from './ui/diff.mjs';
 import { Editor } from './ui/editor.mjs';
 import { FullScreen, parseMouse } from './ui/fullscreen.mjs';
 import { createDecoder } from './ui/keys.mjs';
 import { renderMarkdown } from './ui/markdown.mjs';
-import { bold, c, dim, fg, pad, shimmer, strip, truncate, width, wrap } from './ui/term.mjs';
+import { bg, bold, c, dim, fg, pad, shimmer, strip, truncate, width, wrap } from './ui/term.mjs';
 import { linksIn, paintSelection, selectedText, Transcript } from './ui/transcript.mjs';
 import { box, Field, HistorySearch, Menu } from './ui/widgets.mjs';
 
 const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const VERBS = ['Bichiando', 'Rebuscando', 'Tramando', 'Cavilando', 'Zumbando', 'Escarbando', 'Hilando', 'Revoloteando', 'Maquinando', 'Rumiando', 'Tejiendo', 'Cocinando', 'Afinando', 'Husmeando', 'Garabateando'];
 const EFFORT = { low: ['◔', 'bajo'], medium: ['◑', 'medio'], high: ['●', 'alto'] };
+const DONE_VERBS = ['Bichio', 'Tramo', 'Cocino', 'Rumio', 'Maquino', 'Tejio', 'Husmeo', 'Zumbo', 'Escarbo', 'Hilo'];
 const MAX_INPUT_ROWS = 10;
 const GOAL_ROUNDS = 12;
 
@@ -38,7 +39,7 @@ export class App {
     this.term.onResize = () => this.render();
     this.transcript = new Transcript();
     this.editor = new Editor(state.history);
-    this.mode = MODES.includes(config.mode) ? config.mode : 'normal';
+    this._mode = MODES.includes(config.mode) ? config.mode : 'normal';
     this.overlay = null;
     this.suggestions = null;
     this.running = null;
@@ -64,6 +65,19 @@ export class App {
     this.agent = this.makeAgent();
     this.agent.messages = this.session.messages;
     this.agent.todos = this.session.todos ?? [];
+  }
+
+  // El modo (shift+tab, /mode) se recuerda para las siguientes sesiones.
+  get mode() {
+    return this._mode;
+  }
+
+  set mode(value) {
+    this._mode = value;
+    if (this.config.mode !== value) {
+      this.config.mode = value;
+      saveConfig(this.config);
+    }
   }
 
   makeAgent() {
@@ -243,7 +257,7 @@ export class App {
       if (message.role === 'user' && typeof message.content === 'string') {
         const text = stripAttachments(message.content);
         if (/^\((Esta conversacion se resumio|Se recorto|Conversacion importada)/.test(text)) this.add(() => [notice('conversacion anterior resumida', c.plum)]);
-        else this.add((w) => userBlock(text.replace(/^\((mensaje del usuario|sigue con el objetivo|nota)[^)]*\)\n?/, ''), w).map(highlightTags));
+        else this.add((w) => userBlock(text.replace(/^\((mensaje del usuario|sigue con el objetivo|nota)[^)]*\)\n?/, ''), w).map(highlightTags)).user = true;
       } else if (message.role === 'assistant') {
         if (message.content && message.content !== 'Entendido, sigo desde aqui.') {
           const text = message.content;
@@ -289,6 +303,14 @@ export class App {
     this.allLines = all;
     const view = all.slice(this.top, this.top + viewH).map((line, i) => paintSelection(line, this.top + i, this.selection));
     while (view.length < viewH) view.push('');
+    // Tu pregunta queda fija arriba mientras lees su respuesta; clic para volver a ella.
+    this.sticky = null;
+    const owner = (this.transcript.ranges ?? []).filter((range) => range.item.user && range.start < this.top).at(-1);
+    if (owner && viewH > 4) {
+      const text = strip(all[owner.start] ?? '').replace(/^›\s*/, '').trim();
+      this.sticky = owner.start;
+      view[0] = bg('#2a3157')(pad(`${c.brand('❯')} ${c.ice(truncate(text, W - 6))}`, W - 1));
+    }
     const cursor = bottom.cursor ? { row: viewH + bottom.cursor.row, col: bottom.cursor.col } : null;
     this.term.draw([...view, ...bottom.lines], cursor);
   }
@@ -303,7 +325,14 @@ export class App {
   bottom(W, H) {
     const lines = [];
     let cursor = null;
-    if (!this.follow) lines.push(c.soft('  ↓ hay mas abajo · rueda o av pag para bajar'));
+    // Boton para volver al final cuando subiste por el historial (clic o ctrl+fin).
+    this.clickRows = {};
+    if (!this.follow) {
+      const label = ' ↓ ir al final (ctrl+fin) ';
+      const left = Math.max(0, Math.floor((W - width(label)) / 2));
+      this.clickRows.jump = { row: lines.length, from: left, to: left + width(label) };
+      lines.push(' '.repeat(left) + bg('#3d74c4')(fg('#ffffff')(label)));
+    }
     if (this.running && !this.overlay) {
       lines.push('');
       lines.push(this.spinnerLine());
@@ -320,8 +349,10 @@ export class App {
       const cut = Math.max(0, block.length - room);
       lines.push('');
       if (!Array.isArray(rendered)) cursor = { row: lines.length + rendered.cursor.row - cut, col: rendered.cursor.col };
+      this.clickRows.overlay = lines.length - cut; // fila 0 de la caja del dialogo
       lines.push(...block.slice(cut));
     } else {
+      this.clickRows.suggestions = lines.length;
       lines.push(...this.suggestionLines(W));
       const [glyph, effort] = EFFORT[this.config.effort] ?? EFFORT.medium;
       const right = `${c.sky(this.modelLabel())} ${c.soft('·')} ${c.soft(`${glyph} ${effort} · /effort`)}`;
@@ -381,13 +412,17 @@ export class App {
     const nameWidth = Math.min(32, Math.max(...list.items.map((item) => width(item.label))) + 3);
     const descWidth = W - nameWidth - 8;
     const out = [];
+    this.suggestionMap = []; // fila -> sugerencia, para los clics
     list.items.forEach((item, i) => {
       const active = i === list.index;
       const name = pad(active ? bold(c.sky(item.label)) : c.ice(item.label), nameWidth);
       const all = item.hint && descWidth > 12 ? wrap(item.hint, descWidth) : [''];
       const desc = all.slice(0, 2);
       if (all.length > 2) desc[1] = truncate(`${desc[1]} …`, descWidth);
-      desc.forEach((part, k) => out.push(`  ${k === 0 && active ? c.brand('❯') : ' '} ${k === 0 ? name : ' '.repeat(nameWidth)}${active ? c.sky(part) : c.soft(part)}`));
+      desc.forEach((part, k) => {
+        out.push(`  ${k === 0 && active ? c.brand('❯') : ' '} ${k === 0 ? name : ' '.repeat(nameWidth)}${active ? c.sky(part) : c.soft(part)}`);
+        this.suggestionMap.push(i);
+      });
     });
     return out;
   }
@@ -456,7 +491,12 @@ export class App {
     const inView = event.y < this.viewH;
     if (event.type === 'press' && event.button === 0) {
       this.selection = null;
+      if (event.y === 0 && this.sticky !== null) {
+        this.pressed = null;
+        return this.scroll(this.sticky - this.top);
+      }
       this.pressed = inView ? { line: this.top + event.y, col: event.x } : null;
+      if (!inView) this.clickBottom(event.y - this.viewH, event.x);
       return this.render();
     }
     if (event.type === 'drag' && this.pressed) {
@@ -481,9 +521,38 @@ export class App {
       const link = linksIn(line).find((item) => start.col >= item.from && start.col < item.to);
       if (link) {
         openTarget(link.url);
-        this.flash(`abriendo ${link.url.replace(/^file:\/\/\/?/, '')}`);
+        return this.flash(`abriendo ${link.url.replace(/^file:\/\/\/?/, '')}`);
+      }
+      // Clic en un bloque plegable (razonamiento, diff o salida larga, lecturas agrupadas): se abre o se pliega.
+      const item = this.transcript.itemAt(start.line);
+      if (item?.toggle) {
+        item.toggle();
+        item.update();
+        this.render();
       }
     }
+  }
+
+  // Clics en la parte de abajo: el boton de ir al final y las sugerencias.
+  clickBottom(row, col) {
+    const jump = this.clickRows?.jump;
+    if (jump && row === jump.row && col >= jump.from && col < jump.to) return this.jumpToEnd();
+    if (this.overlay?.click && this.clickRows.overlay !== undefined) return this.overlay.click(row - this.clickRows.overlay);
+    const list = this.suggestions;
+    if (list && this.clickRows.suggestions !== undefined) {
+      const index = this.suggestionMap?.[row - this.clickRows.suggestions];
+      if (index !== undefined) {
+        list.index = index;
+        const item = this.acceptSuggestion();
+        if (item.label.startsWith('/')) return this.submit();
+        this.updateSuggestions();
+      }
+    }
+  }
+
+  jumpToEnd() {
+    this.follow = true;
+    this.render();
   }
 
   scroll(delta) {
@@ -506,6 +575,8 @@ export class App {
     this.selection = null;
     if (key.name === 'pageup') return this.scroll(-(this.viewH - 2));
     if (key.name === 'pagedown') return this.scroll(this.viewH - 2);
+    if (key.ctrl && key.name === 'end') return this.jumpToEnd();
+    if (key.ctrl && key.name === 'home') return this.scroll(-this.allLines.length);
     if (this.overlay) {
       this.overlay.key(key);
       return this.render();
@@ -535,8 +606,8 @@ export class App {
       this.lastEsc = Date.now();
       if (double) {
         if (editor.text) editor.clear();
-        else return this.rewind();
-      } else this.flash(editor.text ? 'esc otra vez para borrar' : 'esc otra vez para volver a un mensaje anterior', 600);
+        else return this.exit();
+      } else this.flash(editor.text ? 'esc otra vez para borrar' : 'esc otra vez para salir de bichi', 600);
       return this.render();
     }
     if (name === 'tab' && key.shift) {
@@ -680,7 +751,7 @@ export class App {
     this.follow = true;
     if (!this.session.title && !display.startsWith('/')) this.session.title = display.replace(/\[Imagen #\d+\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
     const images = [...this.images].filter(([tag]) => text.includes(tag));
-    this.add((w) => userBlock(display, w).map(highlightTags));
+    this.add((w) => userBlock(display, w).map(highlightTags)).user = true;
     await this.run(async () => {
       let content = this.withContext(text);
       for (const [tag, image] of images) {
@@ -756,6 +827,13 @@ export class App {
       this.endText();
       for (const item of this.toolItems.values()) item.remove();
       this.toolItems.clear();
+      // Cartel de cierre: cuanto trabajo y a que hora termino.
+      if (!this.running.interrupted && Date.now() - this.running.started > 1500) {
+        const seconds = Math.round((Date.now() - this.running.started) / 1000);
+        const verb = DONE_VERBS[Math.floor(Math.random() * DONE_VERBS.length)];
+        const hour = new Date().toLocaleTimeString('es', { hour: 'numeric', minute: '2-digit' });
+        this.add(() => [`${c.soft('◈')} ${dim(`${verb} durante ${clock(seconds)} · listo ${hour}`)}`]);
+      }
       this.running = null;
       this.saveSession();
       this.setTitle();
@@ -787,9 +865,10 @@ export class App {
         if (!this.thinking) {
           const item = this.add((w) =>
             item.seconds
-              ? reasoningBlock(this.config.verbose ? item.text : '', item.seconds, w)
-              : [`${c.plum('»')} ${dim('pensando…')}`, ...(this.config.verbose ? wrap(dim(item.text.slice(-800)), w - 4).map((line) => `  ${line}`) : [])],
+              ? reasoningBlock(item.text, item.seconds, w, this.config.verbose || item.expanded)
+              : [`${c.plum('»')} ${dim('pensando…')}`, ...(this.config.verbose || item.expanded ? wrap(dim(item.text.slice(-800)), w - 4).map((line) => `  ${line}`) : [])],
           );
+          item.toggle = () => (item.expanded = !item.expanded);
           item.text = '';
           item.started = Date.now();
           this.thinking = item;
@@ -841,11 +920,25 @@ export class App {
       onToolEnd: (view, outcome) => {
         const item = this.toolItems.get(view.id);
         this.toolItems.delete(view.id);
-        const done = (w) => toolBlock(view, outcome, { columns: w, verbose: this.config.verbose });
-        if (item) {
-          item.render = done;
-          item.update();
-        } else this.add(done);
+        // Lecturas seguidas: se juntan en un solo bloque plegado ("leyo 4 archivos, busco 2 textos").
+        if (READ_TOOLS.has(view.tool.name) && !outcome.error && !view.sub) {
+          item?.remove();
+          const items = this.transcript.items;
+          let group = items.at(-1)?.readGroup ? items.at(-1) : null;
+          if (!group) {
+            group = this.add((w) => readGroupBlock(group.readGroup, w, this.config.verbose || group.expanded));
+            group.readGroup = [];
+            group.toggle = () => (group.expanded = !group.expanded);
+          }
+          group.readGroup.push({ view, outcome });
+          group.update();
+          return this.schedule();
+        }
+        const done = (w) => toolBlock(view, outcome, { columns: w, verbose: this.config.verbose || target.expanded });
+        const target = item ?? this.add(done);
+        target.render = done;
+        target.toggle = () => (target.expanded = !target.expanded);
+        target.update();
         this.schedule();
       },
       onToolDenied: (view, reason) => {
@@ -855,7 +948,7 @@ export class App {
       onNotice: (text) => this.note(text, c.warn),
       onSteer: (text) => {
         this.endText();
-        this.add((w) => userBlock(text, w));
+        this.add((w) => userBlock(text, w)).user = true;
       },
       onCompact: (phase) => {
         if (phase === 'start') this.note('el contexto se esta llenando: resumiendo la conversacion con los modelos gratis…', c.plum);
@@ -1095,7 +1188,8 @@ const SHORTCUTS = [
   ['alt+enter · ctrl+j · \\ enter', 'nueva linea'],
   ['shift+tab', 'cambiar modo: normal, acepta ediciones, plan, sin preguntas'],
   ['esc', 'interrumpir a bichi'],
-  ['esc esc', 'volver a un mensaje anterior (con o sin el codigo)'],
+  ['esc esc', 'salir de bichi (con la entrada vacia; si no, la borra)'],
+  ['/rewind', 'volver a un mensaje anterior (con o sin el codigo)'],
   ['escribir mientras trabaja', 'redirigir sin parar (entra en el siguiente paso)'],
   ['/', 'comandos y skills'],
   ['@ruta', 'mencionar un archivo o carpeta (tab entra en carpetas)'],

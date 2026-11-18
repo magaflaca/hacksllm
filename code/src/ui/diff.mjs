@@ -1,5 +1,5 @@
 // Diffs de lineas para mostrar los cambios que hace el agente en los archivos.
-import { bg, c, dim, fg } from './term.mjs';
+import { bg, c, charWidth, dim, fg } from './term.mjs';
 
 // LCS por programacion dinamica con recorte del prefijo y sufijo comunes; suficiente para cambios de una edicion.
 export function diffLines(before, after) {
@@ -57,14 +57,38 @@ export function renderDiff(ops, { context = 2, maxLines = 40, columns = 100 } = 
     last = index;
     const op = ops[index];
     const number = String(op.type === '+' ? op.b : op.a).padStart(numberWidth);
-    const body = op.text.replace(/\t/g, '  ').slice(0, Math.max(10, columns - numberWidth - 6));
-    if (op.type === '+') lines.push(`${c.soft(number)} ${addLine(`+ ${body}`)}`);
-    else if (op.type === '-') lines.push(`${c.soft(number)} ${delLine(`- ${body}`)}`);
-    else lines.push(`${c.soft(number)}   ${dim(body)}`);
+    // Las lineas largas se parten al ancho de la ventana (con el mismo fondo), no se cortan.
+    const parts = chunks(op.text.replace(/\t/g, '  '), Math.max(10, columns - numberWidth - 4));
+    parts.forEach((part, k) => {
+      const gutter = k ? ' '.repeat(numberWidth) : c.soft(number);
+      const mark = k ? ' ' : op.type === ' ' ? ' ' : op.type;
+      if (op.type === '+') lines.push(`${gutter} ${addLine(`${mark} ${part}`)}`);
+      else if (op.type === '-') lines.push(`${gutter} ${delLine(`${mark} ${part}`)}`);
+      else lines.push(`${gutter}   ${dim(part)}`);
+    });
   }
   if (lines.length > maxLines) {
     const hidden = lines.length - maxLines;
-    return [...lines.slice(0, maxLines), c.soft(`${' '.repeat(numberWidth)}  … ${hidden} lineas mas`)];
+    return [...lines.slice(0, maxLines), c.soft(`${' '.repeat(numberWidth)}  … ${hidden} lineas mas · clic para ver todo`)];
   }
   return lines;
+}
+
+// Trozos de texto plano de como mucho `size` columnas.
+function chunks(text, size) {
+  const out = [];
+  let line = '';
+  let used = 0;
+  for (const char of text) {
+    const w = charWidth(char.codePointAt(0));
+    if (used + w > size) {
+      out.push(line);
+      line = '';
+      used = 0;
+    }
+    line += char;
+    used += w;
+  }
+  out.push(line);
+  return out;
 }
