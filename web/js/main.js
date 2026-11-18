@@ -10,10 +10,11 @@ import { createChat } from './ui/chat.js';
 import { createDocs } from './ui/docs.js';
 import { createWork } from './ui/work.js';
 import { createPages } from './ui/pages.js';
+import { createCode } from './ui/code.js';
 
 const $ = (selector) => document.querySelector(selector);
 const action = (name) => document.querySelectorAll(`[data-action="${name}"]`);
-const VIEWS = { chat: '#/', work: '#/work', pages: '#/paginas', docs: '#/api' };
+const VIEWS = { chat: '#/', work: '#/work', pages: '#/paginas', code: '#/code', docs: '#/api' };
 
 installCursors();
 mountIcons();
@@ -35,6 +36,7 @@ const chat = createChat({ root: chatView, mascot, openKey });
 const workView = $('#view-work');
 const workspace = createWork({ root: workView, mascot, openKey });
 const docs = createDocs({ root: $('#view-docs') });
+const codeView = createCode({ root: $('#view-code'), openKey });
 const go = (name) => (history.replaceState(null, '', VIEWS[name]), showView(name));
 const sitesPanel = createPages({
   root: $('#view-pages'),
@@ -55,6 +57,7 @@ function showView(name) {
   document.body.dataset.view = name;
   activeView().querySelector('.composer')?.prepend(perch);
   if (name === 'pages') sitesPanel.refresh();
+  if (name === 'code') codeView.refresh();
 }
 const viewFromHash = () => Object.keys(VIEWS).find((name) => VIEWS[name] === location.hash) ?? 'chat';
 
@@ -98,6 +101,7 @@ keyDialog.addEventListener('close', () => {
   docs.refresh();
   workspace.refresh();
   sitesPanel.refresh();
+  codeView.refresh();
 });
 keyDialog.addEventListener('click', (event) => event.target === keyDialog && keyDialog.close());
 

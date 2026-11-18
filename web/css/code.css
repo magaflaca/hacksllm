@@ -1,0 +1,379 @@
+/* Pestaña code: instalador de bichi code y terminal de muestra. */
+
+.cli-view {
+  overflow-y: auto;
+  padding: calc(var(--px) * 2) 16px 28px var(--px);
+}
+
+.code-page {
+  max-width: 1120px;
+  margin: 0 auto;
+  display: grid;
+  gap: 26px;
+}
+
+.code-hero {
+  padding: clamp(20px, 4vw, 36px);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: clamp(20px, 3vw, 36px);
+  align-items: start;
+}
+
+.code-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  min-width: 0;
+}
+
+.code-intro h2 {
+  font-size: clamp(34px, 5vw, 46px);
+  line-height: 1;
+}
+
+.code-intro h2 b {
+  color: var(--sky-deep);
+}
+
+.code-intro > p {
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.install {
+  display: grid;
+  gap: 4px;
+}
+
+.install-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.install-panel .code {
+  margin: 0;
+}
+
+.install-where {
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.install-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.install-actions a {
+  text-decoration: none;
+}
+
+.install-or {
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.code-start {
+  color: var(--ink-soft);
+}
+
+.code-start code,
+.key-row code,
+.code-ref code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: var(--surface-2);
+  padding: 1px 6px;
+}
+
+.key-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  font-size: 14px;
+  color: var(--ink-soft);
+  padding: 12px 14px;
+  background: var(--surface-2);
+}
+
+/* Terminal de muestra: siempre oscura, como una terminal de verdad. */
+.term {
+  --t-bg: #12132b;
+  --t-ink: #e6e9ff;
+  background: var(--t-bg);
+  color: var(--t-ink);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.55;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.term-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 12px;
+  background: #1c1e3c;
+  color: #8a90b2;
+  font-size: 12px;
+}
+
+.term-bar i {
+  width: 9px;
+  height: 9px;
+  background: #f39ac0;
+}
+
+.term-bar i:nth-child(2) {
+  background: #f3dd8f;
+}
+
+.term-bar i:nth-child(3) {
+  background: #7fd1b0;
+}
+
+.term-bar span {
+  margin-left: 8px;
+}
+
+.term-body {
+  padding: 14px 16px 12px;
+  display: grid;
+  gap: 1px;
+  overflow-x: auto;
+}
+
+.term-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  box-shadow: inset 0 0 0 1px #3d74c4;
+}
+
+.term-banner canvas {
+  image-rendering: pixelated;
+  display: block;
+}
+
+.term-beetle {
+  width: 48px;
+  height: 42px;
+}
+
+.term-logo {
+  width: min(100%, 240px);
+  height: auto;
+  margin-bottom: 6px;
+}
+
+.t-line {
+  white-space: pre;
+  animation: term-in 0.01s steps(1) both;
+  animation-delay: calc(var(--i) * 0.55s + 0.3s);
+}
+
+.t-user {
+  color: #bfe0fb;
+  margin-bottom: 8px;
+}
+
+.t-res {
+  padding-left: 16px;
+  margin-bottom: 6px;
+}
+
+.t-diff {
+  padding-left: 40px;
+  width: max-content;
+}
+
+.t-del {
+  background: #4a1f2b;
+  color: #ffd0dc;
+}
+
+.t-add {
+  background: #173d2c;
+  color: #bff0d4;
+  margin-bottom: 6px;
+}
+
+.t-say {
+  margin-top: 6px;
+  white-space: normal;
+}
+
+.t-dot {
+  color: #7fd1b0;
+}
+
+.t-soft {
+  color: #8a90b2;
+}
+
+.t-ice {
+  color: #bfe0fb;
+}
+
+.t-brand {
+  color: #5f9be0;
+}
+
+.t-sky {
+  color: #8cc4f2;
+}
+
+.t-plum {
+  color: #b08ae0;
+}
+
+.t-ok {
+  color: #7fd1b0;
+}
+
+.t-warn {
+  color: #f3dd8f;
+}
+
+.term-input {
+  margin-top: 14px;
+  padding: 6px 10px;
+  box-shadow: inset 0 0 0 1px #5f9be0;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  animation: term-in 0.01s steps(1) both;
+  animation-delay: calc(var(--i) * 0.55s + 0.3s);
+}
+
+.term-caret {
+  width: 8px;
+  height: 15px;
+  background: #e6e9ff;
+  animation: caret 1s steps(2) infinite;
+}
+
+.term-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 10px 0;
+  font-size: 12px;
+  animation: term-in 0.01s steps(1) both;
+  animation-delay: calc(var(--i) * 0.55s + 0.3s);
+}
+
+@keyframes term-in {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-line,
+  .term-input,
+  .term-status {
+    animation: none;
+  }
+}
+
+.code-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 22px;
+}
+
+.code-feature {
+  padding: 18px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.code-feature b {
+  font-size: 17px;
+}
+
+.code-feature span {
+  font-size: 14px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.code-feature i {
+  display: block;
+  width: 12px;
+  height: 12px;
+  margin-bottom: 4px;
+  box-shadow: 6px 6px 0 var(--blush);
+}
+
+.dot-sky {
+  background: var(--sky);
+}
+
+.dot-mint {
+  background: var(--mint);
+}
+
+.dot-butter {
+  background: var(--butter);
+}
+
+.dot-blush {
+  background: var(--blush);
+  box-shadow: 6px 6px 0 var(--sky) !important;
+}
+
+.code-ref {
+  padding: clamp(20px, 4vw, 32px);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 26px;
+}
+
+.code-ref h3 {
+  font-size: 20px;
+  margin-bottom: 10px;
+}
+
+.code-ref td:first-child {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.code-ref td {
+  color: var(--ink-soft);
+}
+
+@media (max-width: 860px) {
+  .code-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .term {
+    font-size: 11.5px;
+  }
+  .t-diff {
+    padding-left: 18px;
+  }
+}

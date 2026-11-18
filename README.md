@@ -107,6 +107,35 @@ work y panel                  ->  /work/pages del VPS: copia fuente en data/bich
 - Configuracion: `BICHI_ACCOUNT`, `BICHI_KV` y `BICHI_TOKEN` en `/opt/hacksllm/env` (el token se crea en Cloudflare
   con permisos Workers KV Storage Read y Write). El worker se despliega con `npm run deploy:bichi`.
 
+## bichi code
+
+Agente de programacion en la terminal (pestana **code** de la web). Un solo archivo de Node sin dependencias
+(`dist/code/bichi.mjs`, unos 120 KB) que se instala con:
+
+```bash
+irm https://llm.hacks.win/code/install.ps1 | iex          # Windows (PowerShell)
+curl -fsSL https://llm.hacks.win/code/install.sh | sh     # macOS y Linux
+```
+
+El instalador deja `bichi` en `~/.bichi/bin` (en el PATH) y, si no hay Node 20+, baja uno portable a
+`~/.bichi/node`. La primera vez pide la api key de hacksllm; la config vive en `~/.bichi/config.json`.
+
+- **Modelos**: nombres bichi (`bichi-turbo`, `bichi-max`, `bichihacks`...) con `/names` para ver los reales. En `auto`
+  sigue la cadena de `code/src/providers.mjs` (ordenada midiendo rapidez y acierto) y salta al siguiente cuando uno
+  se agota, falla o responde vacio; cada modelo descansa un rato segun el error.
+- **Herramientas en texto**: casi todos los combos terminan en proveedores sin tool calling, asi que con hacksllm las
+  herramientas se describen en el prompt y el modelo las llama con `<tool name="...">{json}</tool>`
+  (`code/src/core/protocol.mjs`). Con otros proveedores usa tool calling nativo y cae a texto si no lo soportan.
+  Requiere el parche del Playground de `deploy/patch-release.mjs` (respeta el mensaje de sistema del cliente).
+- **Otros proveedores**: NVIDIA build, Mistral, Groq, OpenRouter, Cerebras, Ollama o cualquier api compatible
+  desde `/config`.
+- **Lo demas**: modos con shift+tab (normal, acepta ediciones, plan, sin preguntas), permisos con diff, subagentes
+  en paralelo (`task`), lista de tareas, memoria `BICHI.md` (`/init`, `#nota`), agentes y comandos propios en
+  `.bichi/agents` y `.bichi/commands`, hooks y servidores MCP en `.bichi/settings.json`, `/undo`, `/resume`,
+  `/compact` (y resumen automatico), `!comando`, `@archivo`, redirigir mientras trabaja y `bichi -p` sin interfaz.
+
+`npm run build` empaqueta tambien bichi code; `node scripts/build-code.js` solo el CLI.
+
 ## Usarlo desde tu PC
 
 ```bash
@@ -161,6 +190,8 @@ functions/             puentes same-origin de Pages: v1 (gateway) y work (agente
 lib/origin.js          reenvio comun de esos puentes
 work/                  API de bichi work: sesiones, cola, motores y bichi paginas
 bichi/                 worker de bichi.hacks.win que sirve las paginas desde KV
+code/src/              bichi code: interfaz de terminal (ui/), agente y enrutado (core/), herramientas (tools/)
+web/code/              instaladores de bichi code (el build agrega bichi.mjs y version.txt)
 scripts/               build de la web y servidor de desarrollo
 web/
   js/art/              sprites pixel a pixel: bichi, iconos, cursores, estanque
