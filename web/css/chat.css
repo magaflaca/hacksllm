@@ -28,11 +28,12 @@
   padding: 0 6px;
   flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 4px;
-  scrollbar-width: thin;
 }
 
 .chat-item {
@@ -113,7 +114,6 @@
   display: flex;
   flex-direction: column;
   gap: 22px;
-  scrollbar-width: thin;
   overscroll-behavior: contain;
 }
 
@@ -281,7 +281,6 @@
   overflow-x: auto;
   font: 14px/1.55 var(--mono);
   -webkit-font-smoothing: auto;
-  scrollbar-width: thin;
 }
 
 .table-wrap {
@@ -359,7 +358,6 @@
   white-space: pre-wrap;
   max-height: 320px;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .typing {
@@ -441,7 +439,6 @@
   min-height: 48px;
   max-height: 200px;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .composer-bar {

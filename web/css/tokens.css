@@ -20,6 +20,8 @@
   --on-accent: #262a4d;
   --code-bg: #f1f5fd;
   --veil: rgb(52 57 94 / 0.4);
+  --scroll: #c9cdea;
+  --scroll-hover: var(--sky);
 }
 
 :root[data-theme='dark'] {
@@ -39,4 +41,6 @@
   --on-accent: #12132b;
   --code-bg: #14162f;
   --veil: rgb(4 5 16 / 0.7);
+  --scroll: #343a66;
+  --scroll-hover: #4f6aa8;
 }

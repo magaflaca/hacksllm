@@ -1,12 +1,11 @@
 .docs-view {
+  max-width: calc(860px + var(--px) * 2 + 16px);
+  margin: 0 auto;
   overflow-y: auto;
-  scrollbar-width: thin;
-  padding: calc(var(--px) * 2) var(--px) 24px;
+  padding: calc(var(--px) * 2) 16px 24px var(--px);
 }
 
 .docs {
-  max-width: 860px;
-  margin: 0 auto;
   padding: clamp(20px, 4vw, 40px);
   display: grid;
   gap: 34px;
@@ -109,7 +108,6 @@
   gap: 8px;
   max-height: 240px;
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .model-list li {
