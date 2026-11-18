@@ -69,7 +69,7 @@ export function createChat({ root, mascot, openKey }) {
       'div.welcome',
       {},
       h('h2', {}, 'hola, soy ', h('b', {}, 'bichi')),
-      h('p', {}, 'preguntame lo que quieras. hablo con DeepSeek V4.1 a traves de OmniRoute.'),
+      h('p', {}, 'preguntame lo que quieras. intentaré responderte y darlo todo'),
       h(
         'div.suggestions',
         {},
