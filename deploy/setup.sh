@@ -23,6 +23,7 @@ if [ ! -f "$ROOT/env" ]; then
   chown root:hacksllm "$ROOT/env" && chmod 640 "$ROOT/env"
 fi
 
+install -m 755 "$HERE/hacksllm-cli" /usr/local/bin/hacksllm-cli
 install -m 644 "$HERE/hacksllm.service" /etc/systemd/system/hacksllm.service
 install -m 644 "$HERE/nginx.conf" /etc/nginx/sites-available/hacksllm
 ln -sf /etc/nginx/sites-available/hacksllm /etc/nginx/sites-enabled/hacksllm

@@ -1,0 +1,5 @@
+#!/bin/bash
+# CLI de OmniRoute como el usuario del servicio y con su entorno. Uso: hacksllm-cli <comando>
+set -a; . /opt/hacksllm/env; set +a
+cd /opt/hacksllm && exec sudo -u hacksllm -E env HOME=/opt/hacksllm/home PATH=/opt/hacksllm/runtime/bin:/opt/hacksllm/bun/bin:/usr/bin:/bin NO_COLOR=1 \
+  omniroute "$@" 2> >(grep -v -E "is ignored|Loaded env" >&2) | grep -v -E "Loaded env"
