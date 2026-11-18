@@ -1,0 +1,16 @@
+{
+  "name": "hacksllm",
+  "version": "1.0.0",
+  "description": "Gateway OmniRoute con DeepSeek V4.1 y una web de chat pixel art",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/dev.js",
+    "build": "node scripts/build.js",
+    "deploy:web": "npm run build && wrangler pages deploy dist --project-name hacksllm --branch main",
+    "deploy:server": "bash deploy/deploy.sh"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}
