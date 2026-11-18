@@ -1,0 +1,22 @@
+[Unit]
+Description=hacksllm (OmniRoute gateway)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=hacksllm
+Group=hacksllm
+WorkingDirectory=/opt/hacksllm
+EnvironmentFile=/opt/hacksllm/env
+Environment=HOME=/opt/hacksllm/home
+Environment=PATH=/opt/hacksllm/runtime/bin:/opt/hacksllm/bun/bin:/usr/bin:/bin
+Environment=NODE_OPTIONS=--max-old-space-size=640
+ExecStart=/opt/hacksllm/runtime/bin/omniroute --no-open
+Restart=always
+RestartSec=3
+MemoryHigh=900M
+MemoryMax=1200M
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
