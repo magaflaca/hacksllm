@@ -1,6 +1,7 @@
 import { h, copyText } from '../core/dom.js';
 import { icon } from '../art/pixels.js';
 import { sound } from '../core/sound.js';
+import { highlighter } from '../core/highlight.js';
 
 const INLINE = /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\*[^*\s][^*\n]*\*)|(\[[^\]\n]+\]\((https?:\/\/[^)\s]+)\))/g;
 const BLOCK_START = /^(```|#{1,6}\s|>\s?|\s*[-*+]\s|\s*\d+[.)]\s|\|.*\|\s*$|-{3,}\s*$)/;
@@ -29,7 +30,9 @@ export function codeBlock(code, language = '') {
     copy.replaceChildren(icon('check'));
     setTimeout(() => copy.replaceChildren(icon('copy')), 1400);
   });
-  return h('figure.code.px', {}, h('figcaption', {}, h('span', {}, language || 'texto'), copy), h('pre', {}, h('code', {}, code)));
+  const paint = highlighter(language);
+  const body = paint ? h('code', { innerHTML: paint(code) }) : h('code', {}, code);
+  return h('figure.code.px', {}, h('figcaption', {}, h('span', {}, language || 'texto'), copy), h('pre', {}, body));
 }
 
 const cells = (line) =>

@@ -364,23 +364,63 @@
   min-width: 0;
 }
 
-.editor-text {
+/* editor con colores: el textarea transparente va encima del pre resaltado, con metricas identicas */
+.code-edit {
+  position: relative;
   flex: 1;
   min-height: 0;
-  resize: none;
-  border: 0;
+  background: var(--code-bg);
+}
+
+.code-view,
+.code-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
   padding: 16px 18px;
+  border: 0;
+  overflow: auto;
   font-family: var(--mono);
   font-size: 13.5px;
   line-height: 1.55;
+  letter-spacing: 0;
   tab-size: 2;
-  color: var(--ink);
-  background: var(--code-bg);
   white-space: pre;
+  overflow-wrap: normal;
   -webkit-font-smoothing: auto;
 }
 
-.editor-text:focus {
+.code-view code {
+  display: block;
+  font: inherit;
+  padding: 0;
+  background: none;
+  white-space: inherit;
+}
+
+.code-view {
+  color: var(--ink);
+  pointer-events: none;
+  scrollbar-width: none;
+}
+
+.code-view::-webkit-scrollbar {
+  display: none;
+}
+
+.code-input {
+  resize: none;
+  color: transparent;
+  caret-color: var(--ink);
+  background: transparent;
+}
+
+.code-input::selection {
+  background: rgb(95 155 224 / 0.3);
+  color: transparent;
+}
+
+.code-input:focus {
   outline: 0;
 }
 

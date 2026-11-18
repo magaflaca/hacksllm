@@ -22,6 +22,17 @@
   --veil: rgb(52 57 94 / 0.4);
   --scroll: #c9cdea;
   --scroll-hover: var(--sky);
+
+  --tk-comment: #9aa0bf;
+  --tk-keyword: #b0479a;
+  --tk-string: #2f8a5b;
+  --tk-number: #c0641a;
+  --tk-func: #2f6fd0;
+  --tk-prop: #1f7fa3;
+  --tk-tag: #c23a64;
+  --tk-attr: #7a4cc2;
+  --tk-selector: #9a5a00;
+  --tk-punct: #8a90b2;
 }
 
 :root[data-theme='dark'] {
@@ -43,4 +54,15 @@
   --veil: rgb(4 5 16 / 0.7);
   --scroll: #343a66;
   --scroll-hover: #4f6aa8;
+
+  --tk-comment: #6f77a8;
+  --tk-keyword: #f39ac0;
+  --tk-string: #9fe0b4;
+  --tk-number: #ffc98a;
+  --tk-func: #8fc4ff;
+  --tk-prop: #8fe0ff;
+  --tk-tag: #ff9fb8;
+  --tk-attr: #cdb3ff;
+  --tk-selector: #ffd59a;
+  --tk-punct: #9aa1cc;
 }

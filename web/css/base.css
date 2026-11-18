@@ -275,3 +275,46 @@ a {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* colores de sintaxis (core/highlight.js) */
+.tk-comment {
+  color: var(--tk-comment);
+  font-style: italic;
+}
+
+.tk-keyword, .tk-at {
+  color: var(--tk-keyword);
+}
+
+.tk-string {
+  color: var(--tk-string);
+}
+
+.tk-number, .tk-literal, .tk-color {
+  color: var(--tk-number);
+}
+
+.tk-func {
+  color: var(--tk-func);
+}
+
+.tk-prop {
+  color: var(--tk-prop);
+}
+
+.tk-tag {
+  color: var(--tk-tag);
+}
+
+.tk-attr {
+  color: var(--tk-attr);
+}
+
+.tk-selector {
+  color: var(--tk-selector);
+}
+
+.tk-punct {
+  color: var(--tk-punct);
+}
+

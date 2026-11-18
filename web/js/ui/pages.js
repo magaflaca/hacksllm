@@ -5,6 +5,7 @@ import { store } from '../core/store.js';
 import { sites, slugify, PAGES_ORIGIN } from '../core/pages.js';
 import { deliver } from '../core/work.js';
 import { zipBlob } from '../core/zip.js';
+import { codeEditor } from './code-editor.js';
 
 const TEXT = /\.(html?|css|m?js|json|txt|md|xml|svg|csv|webmanifest)$/i;
 const IMAGE = /\.(png|jpe?g|gif|webp|avif|ico|svg)$/i;
@@ -231,12 +232,12 @@ export function createPages({ root, mascot, openKey, editWithBichi }) {
       try {
         const blob = await sites.read(site.slug, path);
         if (TEXT.test(path)) {
-          const area = h('textarea.editor-text', { spellcheck: false, value: await blob.text() });
           const save = h('button.primary.px', { type: 'button' }, icon('globe'), 'guardar y publicar');
+          const editor = codeEditor(await blob.text(), path, { onSave: () => save.click() });
           save.addEventListener('click', async () => {
             save.disabled = true;
             try {
-              await sites.write(site.slug, path, new Blob([area.value]));
+              await sites.write(site.slug, path, new Blob([editor.value]));
               mascot.say('guardado y publicado', 2000);
               sound.play('copy');
               refresh();
@@ -245,14 +246,8 @@ export function createPages({ root, mascot, openKey, editWithBichi }) {
             }
             save.disabled = false;
           });
-          area.addEventListener('keydown', (event) => {
-            if ((event.ctrlKey || event.metaKey) && event.key === 's') (event.preventDefault(), save.click());
-            if (event.key === 'Tab') {
-              event.preventDefault();
-              area.setRangeText('  ', area.selectionStart, area.selectionEnd, 'end');
-            }
-          });
-          pane.replaceChildren(area, h('div.editor-bar', {}, h('span.hint', {}, 'ctrl+s guarda'), save));
+          pane.replaceChildren(editor.root, h('div.editor-bar', {}, h('span.hint', {}, 'ctrl+s guarda'), save));
+          editor.area.focus();
         } else if (IMAGE.test(path)) {
           objectUrl = URL.createObjectURL(blob);
           pane.replaceChildren(h('div.editor-image', {}, h('img', { src: objectUrl, alt: path })));
