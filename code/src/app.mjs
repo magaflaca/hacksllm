@@ -14,7 +14,7 @@ import { displayName } from './providers.mjs';
 import { COMMANDS, runCommand } from './commands.mjs';
 import { listFiles } from './tools/files.mjs';
 import { killAll, shell as shellTool } from './tools/shell.mjs';
-import { beetle } from './ui/art.mjs';
+import { beetle, logo } from './ui/art.mjs';
 import { deniedBlock, notice, reasoningBlock, todoLines, toolBlock, toolTitle, userBlock } from './ui/blocks.mjs';
 import { renderDiff } from './ui/diff.mjs';
 import { Editor } from './ui/editor.mjs';
@@ -97,7 +97,7 @@ export class App {
       if (this.running) {
         for (const item of this.toolItems.values()) item.update();
         this.thinking?.update();
-        if (this.tick % 10 === 0) this.setTitle();
+        if (this.tick % 2 === 0) this.setTitle();
         this.schedule();
       }
     }, 90);
@@ -105,12 +105,24 @@ export class App {
     this.render();
   }
 
+  // Titulo de la ventana: el nombre de la conversacion (o la carpeta) con el bichi delante.
   setTitle() {
-    const folder = path.basename(this.cwd) || this.cwd;
-    this.term.title(this.running ? `${SPIN[this.tick % SPIN.length]} bichi · ${folder}` : `bichi · ${folder}`);
+    const name = this.session.title || `bichi · ${path.basename(this.cwd) || this.cwd}`;
+    // Trabajando: un punto que va y viene delante del nombre, como el indicador de la app.
+    const wave = ['⠁', '⠂', '⠄', '⡀', '⢀', '⠠', '⠐', '⠈'];
+    const busy = this.running ? `${wave[Math.floor(this.tick / 2) % wave.length]} ` : '';
+    this.term.title(`👾 ${busy}${name}`);
   }
 
+  rename(title) {
+    this.session.title = title;
+    this.saveSession();
+    this.setTitle();
+  }
+
+  // Cabecera: a veces el cartel grande con el logo pixel, a veces la minimalista.
   header() {
+    if (this.bigHeader ?? (this.bigHeader = Math.random() < 0.5)) return this.banner();
     this.transcript.add(
       (w) => {
         const pic = beetle('idle');
@@ -129,6 +141,30 @@ export class App {
         const lines = [];
         for (let i = 0; i < Math.max(pic.length, info.length); i++) lines.push(`  ${pad(pic[i] ?? '', 16)}  ${info[i] ?? ''}`);
         return lines;
+      },
+      { gap: 0 },
+    );
+  }
+
+  // El cartel grande: bichi contento y el logo BICHI CODE en una caja azul.
+  banner() {
+    this.transcript.add(
+      (w) => {
+        const pic = beetle('happy');
+        const home = process.env.HOME ?? process.env.USERPROFILE ?? '\u0000';
+        const info = [
+          ...logo('BICHI CODE'),
+          `${c.soft('v')}${c.sky(VERSION)} ${c.soft('·')} ${c.ice('tu bicho programador')}`,
+          '',
+          `${c.soft('modelo ')} ${c.sky(this.modelLabel())}${this.config.model === 'auto' ? c.soft('  (cambia solo si uno se agota)') : ''}`,
+          `${c.soft('carpeta')} ${this.cwd.replace(home, '~')}`,
+        ];
+        const hints = `  ${c.sky('/')} ${c.soft('comandos')}  ${c.sky('@')} ${c.soft('archivos')}  ${c.sky('!')} ${c.soft('shell')}  ${c.sky('alt+v')} ${c.soft('imagen')}  ${c.sky('shift+tab')} ${c.soft('modos')}`;
+        if (w < 72) return [...info.slice(6), '', hints];
+        const lines = [];
+        for (let i = 0; i < Math.max(pic.length, info.length); i++) lines.push(`${pad(pic[i] ?? '', 18)}  ${info[i] ?? ''}`);
+        const inner = Math.min(w - 1, Math.max(...lines.map(width)) + 6);
+        return [...box(lines, inner, { color: c.deep, padX: 2 }), hints];
       },
       { gap: 0 },
     );
@@ -642,6 +678,7 @@ export class App {
 
   async send(text, { display = text } = {}) {
     this.follow = true;
+    if (!this.session.title && !display.startsWith('/')) this.session.title = display.replace(/\[Imagen #\d+\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
     const images = [...this.images].filter(([tag]) => text.includes(tag));
     this.add((w) => userBlock(display, w).map(highlightTags));
     await this.run(async () => {

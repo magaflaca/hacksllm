@@ -13,6 +13,7 @@ import { catalog, displayName, providerOf } from './providers.mjs';
 import { openConfig, pickEffort, pickModel, providersMenu, sessionOptions, setKey } from './settings-ui.mjs';
 import { servers } from './tools/mcp.mjs';
 import { backgroundJobs } from './tools/shell.mjs';
+import { update } from './updater.mjs';
 import { notice, todoLines } from './ui/blocks.mjs';
 import { bold, c, dim, pad } from './ui/term.mjs';
 
@@ -57,7 +58,8 @@ export const COMMANDS = [
   { name: 'jobs', description: 'procesos en segundo plano' },
   { name: 'export', description: 'guardar la conversacion en un .md' },
   { name: 'copy', description: 'copiar la ultima respuesta' },
-  { name: 'update', description: 'actualizar bichi code' },
+  { name: 'rename', description: 'cambiar el nombre de la conversacion' },
+  { name: 'update', description: 'buscar e instalar la ultima version' },
   { name: 'exit', description: 'salir' },
   { name: 'quit', description: 'salir', hidden: true },
   { name: 'new', description: 'conversacion nueva', hidden: true },
@@ -264,8 +266,21 @@ export async function runCommand(app, name, args, raw) {
       if (!last) return print(notice('aun no hay respuestas'));
       return print((await copyText(last.content)) ? notice('copiado', c.ok) : notice('no pude copiar', c.warn));
     }
-    case 'update':
-      return print(notice('para actualizar ejecuta en otra terminal: bichi update'));
+    case 'update': {
+      app.flash('buscando la ultima version…');
+      try {
+        const version = await update();
+        return print(version ? notice(`bichi ${version} instalado; se usa al volver a abrir bichi (esta sesion sigue con ${VERSION})`, c.ok) : notice(`ya tienes la ultima (${VERSION})`));
+      } catch (error) {
+        return print(notice(error.message, c.warn));
+      }
+    }
+    case 'rename': {
+      const title = args || (await app.field({ title: 'nombre de la conversacion', initial: app.session.title ?? '' }));
+      if (!title) return;
+      app.rename(title.slice(0, 80));
+      return print(notice(`conversacion: ${title.slice(0, 80)}`, c.ok));
+    }
     case 'exit':
     case 'quit':
       return app.exit();

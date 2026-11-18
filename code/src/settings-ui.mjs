@@ -73,6 +73,7 @@ export async function openConfig(app) {
         { label: () => `resumir solo cuando se llena el contexto: ${c.sky(config.autoCompact !== false ? 'si' : 'no')}`, value: 'compact', onSide: () => ((config.autoCompact = config.autoCompact === false), saveConfig(config)) },
         { label: () => `shell: ${c.sky(config.shell)}`, value: 'shell', onSide: (step) => ((config.shell = cycle(SHELLS, config.shell, step)), saveConfig(config)) },
         { label: () => `detalle (resultados completos): ${c.sky(config.verbose ? 'si' : 'no')}`, value: 'verbose', onSide: () => ((config.verbose = !config.verbose), saveConfig(config)) },
+        { label: () => `actualizar solo: ${c.sky(config.autoUpdate !== false ? 'si' : 'no')}`, value: 'autoUpdate', onSide: () => ((config.autoUpdate = config.autoUpdate === false), saveConfig(config)) },
       ],
       escape: null,
     });
@@ -85,6 +86,7 @@ export async function openConfig(app) {
     else if (choice === 'compact') config.autoCompact = config.autoCompact === false;
     else if (choice === 'shell') config.shell = cycle(SHELLS, config.shell);
     else if (choice === 'verbose') config.verbose = !config.verbose;
+    else if (choice === 'autoUpdate') config.autoUpdate = config.autoUpdate === false;
     saveConfig(config);
   }
 }

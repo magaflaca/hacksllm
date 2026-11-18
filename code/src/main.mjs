@@ -1,6 +1,6 @@
 // bichi code: agente de programacion en la terminal, con los modelos de hacksllm y otros proveedores.
 import { existsSync, statSync } from 'node:fs';
-import { rename, writeFile } from 'node:fs/promises';
+
 import path from 'node:path';
 import { configExists, flushState, loadConfig, loadSettings, loadState, saveConfig, SITE, VERSION } from './config.mjs';
 import { Agent } from './core/agent.mjs';
@@ -9,6 +9,7 @@ import { listSessions, loadSession, newSessionId, saveSession } from './core/ses
 import { activeProviders } from './providers.mjs';
 import { startMcp, stopMcp } from './tools/mcp.mjs';
 import { killAll } from './tools/shell.mjs';
+import { autoUpdate, update } from './updater.mjs';
 import { c, dim } from './ui/term.mjs';
 
 const HELP = `${c.brand('bichi code')} ${dim(VERSION)}  tu bicho programador
@@ -51,18 +52,10 @@ function parseArgs(argv) {
   return options;
 }
 
-async function update() {
-  const target = process.argv[1];
+async function updateNow() {
   process.stdout.write(`${c.brand('●')} buscando la ultima version…\n`);
-  const latest = (await (await fetch(`${SITE}/code/version.txt`, { cache: 'no-store' })).text()).trim();
-  if (latest === VERSION) return process.stdout.write(`  ${c.ok('ya tienes la ultima')} (${VERSION})\n`);
-  const response = await fetch(`${SITE}/code/bichi.mjs`, { cache: 'no-store' });
-  if (!response.ok) throw new Error(`no pude descargar: ${response.status}`);
-  const code = await response.text();
-  if (!code.includes('bichi code')) throw new Error('la descarga no parece bichi code');
-  await writeFile(`${target}.new`, code);
-  await rename(`${target}.new`, target);
-  process.stdout.write(`  ${c.ok('actualizado')} ${VERSION} → ${latest}\n`);
+  const latest = await update({ force: process.argv.includes('--force') });
+  process.stdout.write(latest ? `  ${c.ok('actualizado')} ${VERSION} → ${latest}\n` : `  ${c.ok('ya tienes la ultima')} (${VERSION})\n`);
 }
 
 async function headless({ config, state, router, cwd, settings, prompt, mode, session }) {
@@ -101,7 +94,7 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.version) return console.log(VERSION);
   if (options.help) return console.log(HELP);
-  if (options.positional[0] === 'update') return update();
+  if (options.positional[0] === 'update') return updateNow();
 
   let cwd = process.cwd();
   if (options.positional.length === 1 && existsSync(options.positional[0]) && statSync(options.positional[0]).isDirectory()) {
@@ -138,6 +131,8 @@ async function main() {
     process.exit(1);
   });
   app.start();
+
+  autoUpdate(config, (version) => app.note(`bichi ${version} descargado e instalado · se usa al volver a abrir bichi`, c.ok));
 
   startMcp(settings.mcpServers).then((tools) => {
     extraTools.push(...tools);
