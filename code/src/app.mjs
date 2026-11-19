@@ -296,7 +296,10 @@ export class App {
     const tools = this.agent.tools();
     const shown = this.session.shown;
     if (shown) this.replayShown(shown);
+    const isRetryNote = (message) => message?.role === 'user' && typeof message.content === 'string' && message.content.startsWith('(nota del sistema) Tu ultima respuesta parece');
     for (const [index, message] of this.agent.messages.entries()) {
+      // Una llamada mal escrita y la nota que pidio repetirla no se ensenan.
+      if (isRetryNote(message) || isRetryNote(this.agent.messages[index + 1])) continue;
       if (message.role === 'user' && typeof message.content === 'string') {
         const text = stripAttachments(message.content);
         if (shown && text.startsWith('(Conversacion importada'))

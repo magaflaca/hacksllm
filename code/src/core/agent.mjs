@@ -5,7 +5,7 @@ import { schema, toolset } from '../tools/index.mjs';
 import { runHooks } from './hooks.mjs';
 import { decide, ruleFor } from './permissions.mjs';
 import { loadAgents } from './project.mjs';
-import { parseArgs, toTextMessages, visiblePrefix } from './protocol.mjs';
+import { looksLikeCall, parseArgs, toTextMessages, visiblePrefix } from './protocol.mjs';
 import { systemPrompt } from './prompt.mjs';
 import { ContextError } from './router.mjs';
 import { skillTool } from './skills.mjs';
@@ -119,6 +119,7 @@ export class Agent {
 
   async loop(signal) {
     let compacted = false;
+    let malformed = 0;
     for (let step = 0; step < MAX_STEPS; step++) {
       if (this.queue.length) {
         const text = this.queue.splice(0).join('\n\n');
@@ -142,6 +143,24 @@ export class Agent {
         throw error;
       }
       const { text, calls } = result;
+      if (result.malformed && malformed++ < 2) {
+        this.ui.onNotice?.('la llamada a la herramienta llego mal escrita; se la pido de nuevo al modelo');
+        this.messages.push(
+          { role: 'assistant', content: text.length > 1500 ? `${text.slice(0, 600)}\n…\n${text.slice(-400)}` : text },
+          {
+            role: 'user',
+            content:
+              '(nota del sistema) Tu ultima respuesta parece una llamada a herramienta pero no se pudo leer (JSON invalido, bloque sin cerrar o formato distinto), asi que NO se ejecuto nada y el archivo sigue igual. Repite la llamada con el formato exacto: <tool name="...">{json valido}</tool>, con los saltos de linea escapados como \\n dentro de los strings. Si el archivo es largo, usa edit con cambios pequenos en vez de reescribirlo entero. Si no querias llamar a ninguna herramienta, responde de nuevo en texto normal.',
+          },
+        );
+        step--;
+        continue;
+      }
+      if (result.malformed) {
+        // Ya se pidio dos veces: se ensena tal cual para que el usuario vea que paso.
+        this.ui.onText?.(text);
+        this.ui.onAssistantEnd?.({ text, calls: 0 });
+      }
       this.messages.push({
         role: 'assistant',
         content: text || (calls.length ? '' : '(sin respuesta)'),
@@ -213,6 +232,11 @@ export class Agent {
       this.usage.completion += result.usage.completion_tokens ?? 0;
       this.usage.lastPrompt = result.usage.prompt_tokens ?? 0;
     } else this.usage.lastPrompt = 0;
+    // Una llamada a herramienta que no se pudo leer no se ensena como respuesta: se quita lo mostrado y se pide otra vez.
+    if (!result.calls.length && looksLikeCall(result.text)) {
+      this.ui.onSwitch?.({ from: result.entry, to: result.entry, reason: 'reintento', reset: true });
+      return { ...result, malformed: true };
+    }
     // Si el texto final (sin llamadas) es mas largo que lo mostrado, se completa.
     if (result.text.length > shown) this.ui.onText?.(result.text.slice(shown));
     this.ui.onAssistantEnd?.({ text: result.text, calls: result.calls.length });
