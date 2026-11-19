@@ -141,7 +141,7 @@ async function main() {
 
   if (!configExists() || !activeProviders(config).length) await firstRun(app);
   const commands = await import('./commands.mjs');
-  if (options.resume === true) await commands.runCommand(app, 'resume', '', '/resume');
+  if (options.resume === true) await app.pickResume();
   else if (session) commands.resumeInto(app, session);
 
   const initial = options.positional.join(' ').trim();

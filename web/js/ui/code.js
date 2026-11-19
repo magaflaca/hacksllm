@@ -96,7 +96,7 @@ function terminal() {
     h(
       'div.term-body',
       {},
-      h('div.term-banner', {}, beetle, h('div', {}, logo, h('div.t-soft', {}, 'v1.5.0 · tu bicho programador'))),
+      h('div.term-banner', {}, beetle, h('div', {}, logo, h('div.t-soft', {}, 'v1.6.0 · tu bicho programador'))),
       ...lines,
       h('div.term-input', { style: `--i:${SCRIPT.length}` }, h('span.t-brand', {}, '›'), h('span.term-caret')),
       h('div.term-status', { style: `--i:${SCRIPT.length}` }, h('span.t-plum', {}, '▸▸ acepta ediciones'), h('span.t-sky', {}, 'auto · bichi-turbo')),

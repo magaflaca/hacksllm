@@ -4,8 +4,9 @@ import { cols, rows, truncate } from './term.mjs';
 
 const SYNC_ON = '\x1b[?2026h';
 const SYNC_OFF = '\x1b[?2026l';
-const ENTER = '\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[?2004h\x1b[?1004h\x1b[H\x1b[2J';
-const LEAVE = '\x1b[?1004l\x1b[?2004l\x1b[?1006l\x1b[?1002l\x1b[?1000l\x1b[0m\x1b[?25h\x1b[?1049l';
+// 1003: tambien el movimiento del raton, para que pasar por encima de una lista la seleccione.
+const ENTER = '\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h\x1b[?2004h\x1b[?1004h\x1b[H\x1b[2J';
+const LEAVE = '\x1b[?1004l\x1b[?2004l\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[0m\x1b[?25h\x1b[?1049l';
 
 export class FullScreen {
   constructor(out = process.stdout) {
@@ -73,6 +74,6 @@ export function parseMouse(sequence) {
   const y = Number(match[3]) - 1;
   if (code & 64) return { type: code & 1 ? 'wheeldown' : 'wheelup', x, y };
   const button = code & 3;
-  if (code & 32) return { type: 'drag', button, x, y };
+  if (code & 32) return { type: button === 3 ? 'move' : 'drag', button, x, y };
   return { type: match[4] === 'M' ? 'press' : 'release', button, x, y };
 }

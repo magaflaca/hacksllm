@@ -8,10 +8,10 @@ import { Agent } from './core/agent.mjs';
 import { clipboardImage, describe, imagePath, storeImage } from './core/images.mjs';
 import { MODE_INFO, MODES } from './core/permissions.mjs';
 import { loadCommands } from './core/project.mjs';
-import { newSessionId, saveSession } from './core/sessions.mjs';
+import { listSessions, loadSession, newSessionId, saveSession } from './core/sessions.mjs';
 import { listSkills } from './core/skills.mjs';
 import { displayName } from './providers.mjs';
-import { COMMANDS, runCommand } from './commands.mjs';
+import { ARG_HINTS, argChoices, COMMANDS, runCommand } from './commands.mjs';
 import { listFiles } from './tools/files.mjs';
 import { backgroundJobs, killAll, shell as shellTool, stopJob } from './tools/shell.mjs';
 import { beetle, logo } from './ui/art.mjs';
@@ -23,6 +23,7 @@ import { createDecoder } from './ui/keys.mjs';
 import { renderMarkdown } from './ui/markdown.mjs';
 import { bg, bold, c, dim, fg, pad, shimmer, strip, truncate, width, wrap } from './ui/term.mjs';
 import { Pet, PET_WIDTH } from './ui/pet.mjs';
+import { ResumePicker } from './ui/resume.mjs';
 import { linksIn, paintSelection, selectedText, Transcript } from './ui/transcript.mjs';
 import { box, Field, HistorySearch, Menu } from './ui/widgets.mjs';
 
@@ -127,7 +128,7 @@ export class App {
 
   // Titulo de la ventana: el nombre de la conversacion (o la carpeta) con el bichi delante.
   setTitle() {
-    const name = this.session.title || `bichi · ${path.basename(this.cwd) || this.cwd}`;
+    const name = this.session.title || 'bichi code';
     // Trabajando: un punto que va y viene delante del nombre, como el indicador de la app.
     const wave = ['⠁', '⠂', '⠄', '⡀', '⢀', '⠠', '⠐', '⠈'];
     const busy = this.running ? `${wave[Math.floor(this.tick / 2) % wave.length]} ` : '';
@@ -273,7 +274,7 @@ export class App {
     this.header();
     const results = new Map(this.agent.messages.filter((message) => message.role === 'tool').map((message) => [message.tool_call_id, message.content]));
     const tools = this.agent.tools();
-    for (const message of this.agent.messages) {
+    for (const [index, message] of this.agent.messages.entries()) {
       if (message.role === 'user' && typeof message.content === 'string') {
         const text = stripAttachments(message.content);
         if (/^\((Esta conversacion se resumio|Se recorto|Conversacion importada)/.test(text)) this.add(() => [notice('conversacion anterior resumida', c.plum)]);
@@ -297,6 +298,8 @@ export class App {
           this.add((w) => [toolTitle({ label }, result.startsWith('error') ? 'error' : 'done'), `  ${c.soft('╰')}  ${c.soft(truncate(first, w - 8))}`]);
         }
       }
+      const stamp = this.session.stamps?.[index];
+      if (stamp) this.add(() => stampLine(stamp));
     }
     this.follow = true;
     this.render();
@@ -313,6 +316,10 @@ export class App {
     this.pending = null;
     if (!this.term.active) return;
     const { width: W, height: H } = this.term.size();
+    if (this.picker) {
+      const frame = this.picker.render(W, H);
+      return this.term.draw(frame.lines, frame.cursor);
+    }
     const bottom = this.bottom(W, H);
     const viewH = Math.max(1, H - bottom.lines.length);
     const all = this.transcript.lines(W);
@@ -379,10 +386,13 @@ export class App {
       // La mascota va sobre la linea de la entrada, sin pisar el texto de la derecha.
       const pet = this.pet?.sprite(rightStart - PET_WIDTH - 8);
       if (pet && pet.x + PET_WIDTH + 8 <= rightStart) {
+        // Tres lineas: una extra arriba (la barra crece, no tapa nada), la del modelo y la regla de la entrada.
         this.clickRows.pet = lines.length;
-        const top = `${' '.repeat(pet.x)}${pet.lines[0]} ${pet.extra}`;
-        lines.push(top + ' '.repeat(Math.max(1, rightStart - width(top))) + right);
-        lines.push(`${c.soft('─'.repeat(pet.x))}${pet.lines[1]}${c.soft('─'.repeat(Math.max(0, W - 1 - pet.x - PET_WIDTH)))}`);
+        lines.push(`${' '.repeat(pet.x)}${pet.lines[0]} ${pet.extra}`);
+        const middle = `${' '.repeat(pet.x)}${pet.lines[1]}`;
+        lines.push(middle + ' '.repeat(Math.max(1, rightStart - width(middle))) + right);
+        const feet = pet.lines[2].replace(/ /g, c.soft('─'));
+        lines.push(`${c.soft('─'.repeat(pet.x))}${feet}${c.soft('─'.repeat(Math.max(0, W - 1 - pet.x - PET_WIDTH)))}`);
       } else {
         this.clickRows.pet = undefined;
         lines.push(' '.repeat(rightStart) + right);
@@ -416,6 +426,9 @@ export class App {
     }
     const shift = rows.length > MAX_INPUT_ROWS ? Math.max(0, Math.min(cursor.row - MAX_INPUT_ROWS + 1, rows.length - MAX_INPUT_ROWS)) : 0;
     const lines = rows.slice(shift, shift + MAX_INPUT_ROWS).map((row, i) => `${i === 0 && shift === 0 ? prompt : ' '} ${highlightTags(row)}`);
+    // Sintaxis del comando en gris mientras falta el argumento: "/model [modelo]".
+    const command = /^\/([\w-]+) ?$/.exec(text);
+    if (command && ARG_HINTS[command[1]] && lines.length === 1) lines[0] += `${text.endsWith(' ') ? '' : ' '}${dim(ARG_HINTS[command[1]])}`;
     return { lines, cursor: { row: cursor.row - shift, col: 2 + cursor.col } };
   }
 
@@ -487,7 +500,7 @@ export class App {
     this.suggestionMap = []; // fila -> sugerencia, para los clics
     list.items.forEach((item, i) => {
       const active = i === list.index;
-      const name = pad(active ? bold(c.sky(item.label)) : c.ice(item.label), nameWidth);
+      const name = pad(markMatch(item.label, list.query, active), nameWidth);
       const all = item.hint && descWidth > 12 ? wrap(item.hint, descWidth) : [''];
       const desc = all.slice(0, 2);
       if (all.length > 2) desc[1] = truncate(`${desc[1]} …`, descWidth);
@@ -502,6 +515,17 @@ export class App {
   // ---------- completado de /comandos y @archivos ----------
 
   updateSuggestions() {
+    // Argumento de un comando ("/model bi", "/bichito "): se sugieren sus opciones.
+    const arg = /^\/([\w-]+) (\S*)$/.exec(this.editor.text);
+    if (arg && this.editor.cursor === this.editor.text.length) {
+      const typed = arg[2].toLowerCase();
+      const items = argChoices(this, arg[1])
+        .filter((choice) => choice.value.toLowerCase().startsWith(typed) && choice.value.toLowerCase() !== typed)
+        .slice(0, 8)
+        .map((choice) => ({ label: choice.value, hint: choice.hint, value: `/${arg[1]} ${choice.value}`, whole: true }));
+      this.suggestions = items.length ? { items, index: Math.min(this.suggestions?.index ?? 0, items.length - 1), query: typed } : null;
+      return;
+    }
     const token = this.editor.token();
     if (!token) return (this.suggestions = null);
     const query = token.text.slice(1);
@@ -516,7 +540,7 @@ export class App {
         .slice(0, 8)
         .map((command) => ({ label: `/${command.name}`, hint: command.description, value: `/${command.name} ` }));
     } else if (token.text.startsWith('@')) items = this.pathSuggestions(query);
-    this.suggestions = items.length ? { items, index: Math.min(this.suggestions?.index ?? 0, items.length - 1), token } : null;
+    this.suggestions = items.length ? { items, index: Math.min(this.suggestions?.index ?? 0, items.length - 1), token, query: query.toLowerCase() } : null;
   }
 
   // Carpetas y archivos como en un explorador; sin barra, ademas busqueda en todo el proyecto.
@@ -549,7 +573,8 @@ export class App {
   acceptSuggestion() {
     const list = this.suggestions;
     const item = list.items[list.index];
-    this.editor.replaceToken(this.editor.token() ?? list.token, item.value);
+    if (item.whole) this.editor.set(item.value);
+    else this.editor.replaceToken(this.editor.token() ?? list.token, item.value);
     this.suggestions = null;
     return item;
   }
@@ -558,9 +583,31 @@ export class App {
 
   onMouse(event) {
     if (!event) return;
-    if (event.type === 'wheelup') return this.scroll(-3);
-    if (event.type === 'wheeldown') return this.scroll(3);
+    if (this.picker) {
+      const index = this.picker.at(event.y);
+      if (event.type === 'wheelup') this.picker.key({ name: 'up' });
+      else if (event.type === 'wheeldown') this.picker.key({ name: 'down' });
+      else if (index >= 0 && event.type === 'move') this.picker.index = index;
+      else if (index >= 0 && event.type === 'press' && event.button === 0) {
+        this.picker.index = index;
+        this.picker.key({ name: 'enter' });
+      }
+      return this.render();
+    }
     const inView = event.y < this.viewH;
+    // Sobre una lista (sugerencias o menu), el raton elige: pasar por encima selecciona y la rueda la recorre.
+    if (event.type === 'move') return this.pressed ? null : this.hover(event.y - this.viewH);
+    if (event.type === 'wheelup' || event.type === 'wheeldown') {
+      const list = !inView && (this.overlay?.options ? this.overlay : this.suggestions);
+      if (list?.options ?? list?.items) {
+        const count = (list.options ?? list.items).length;
+        list.index = (list.index + (event.type === 'wheelup' ? -1 : 1) + count) % count;
+        return this.render();
+      }
+      return this.scroll(event.type === 'wheelup' ? -3 : 3);
+    }
+    // Clic derecho: pega lo que haya en el portapapeles (la terminal no puede, porque bichi usa el raton).
+    if (event.type === 'press' && event.button === 2) return this.pasteClipboard();
     if (event.type === 'press' && event.button === 0) {
       this.selection = null;
       if (event.y === 0 && this.sticky !== null) {
@@ -610,7 +657,7 @@ export class App {
     const jump = this.clickRows?.jump;
     if (jump && row === jump.row && col >= jump.from && col < jump.to) return this.jumpToEnd();
     const petRow = this.clickRows?.pet;
-    if (petRow !== undefined && (row === petRow || row === petRow + 1) && this.pet.hit(col)) return this.pet.leave();
+    if (petRow !== undefined && row >= petRow && row <= petRow + 2 && this.pet.hit(col)) return this.pet.leave();
     const shells = this.clickRows?.shells;
     if (shells && row === this.clickRows.footer && col >= shells.from && col < shells.to) return this.jobsMenu();
     if (this.overlay?.click && this.clickRows.overlay !== undefined) return this.overlay.click(row - this.clickRows.overlay);
@@ -620,10 +667,53 @@ export class App {
       if (index !== undefined) {
         list.index = index;
         const item = this.acceptSuggestion();
-        if (item.label.startsWith('/')) return this.submit();
+        if (item.label.startsWith('/') || item.whole) return this.submit();
         this.updateSuggestions();
       }
     }
+  }
+
+  // `bichi --resume`: la pantalla completa para elegir que conversacion retomar.
+  async pickResume() {
+    this.picker = new ResumePicker({ here: listSessions(this.cwd), all: listSessions(), cwd: this.cwd });
+    this.term.prev = [];
+    this.term.title('👾 bichi · retomar');
+    this.render();
+    const id = await this.picker.promise;
+    this.picker = null;
+    this.term.prev = [];
+    if (id) (await import('./commands.mjs')).resumeInto(this, loadSession(id));
+    this.setTitle();
+    this.render();
+  }
+
+  // Raton encima de la parte de abajo: marca la sugerencia u opcion de menu que haya en esa fila.
+  hover(row) {
+    if (row < 0) return;
+    if (this.overlay?.optionRows && this.clickRows.overlay !== undefined) {
+      const index = this.overlay.optionRows.indexOf(row - this.clickRows.overlay);
+      if (index >= 0 && index !== this.overlay.index) {
+        this.overlay.index = index;
+        this.render();
+      }
+      return;
+    }
+    const index = this.suggestions && this.suggestionMap?.[row - this.clickRows.suggestions];
+    if (index !== undefined && index !== null && index !== false && index !== this.suggestions.index) {
+      this.suggestions.index = index;
+      this.render();
+    }
+  }
+
+  async pasteClipboard() {
+    const text = await readClipboard();
+    if (!text) return this.flash('el portapapeles esta vacio (alt+v para imagenes)');
+    if (this.overlay?.key) this.overlay.key({ name: 'paste', paste: text });
+    else {
+      this.paste(text);
+      this.updateSuggestions();
+    }
+    this.render();
   }
 
   jumpToEnd() {
@@ -653,6 +743,10 @@ export class App {
     }
     this.pet.input();
     this.selection = null;
+    if (this.picker) {
+      this.picker.key(key);
+      return this.render();
+    }
     if (key.name === 'pageup') return this.scroll(-(this.viewH - 2));
     if (key.name === 'pagedown') return this.scroll(this.viewH - 2);
     if (key.ctrl && key.name === 'end') return this.jumpToEnd();
@@ -702,7 +796,7 @@ export class App {
       }
       if (name === 'tab' || (name === 'enter' && !key.meta && !key.ctrl)) {
         const item = this.acceptSuggestion();
-        if (name === 'enter' && item.label.startsWith('/')) return this.submit();
+        if (name === 'enter' && (item.label.startsWith('/') || item.whole)) return this.submit();
         this.updateSuggestions();
         return this.render();
       }
@@ -914,7 +1008,10 @@ export class App {
         const seconds = Math.round((Date.now() - this.running.started) / 1000);
         const verb = DONE_VERBS[Math.floor(Math.random() * DONE_VERBS.length)];
         const hour = new Date().toLocaleTimeString('es', { hour: 'numeric', minute: '2-digit' });
-        this.add(() => [`${c.soft('◈')} ${dim(`${verb} durante ${clock(seconds)} · listo ${hour}`)}`]);
+        // Se guarda con el ultimo mensaje para que siga ahi al retomar la conversacion.
+        const stamp = `${verb} durante ${clock(seconds)} · listo ${hour}`;
+        (this.session.stamps ??= {})[this.agent.messages.length - 1] = stamp;
+        this.add(() => stampLine(stamp));
       }
       this.running = null;
       this.saveSession();
@@ -1039,7 +1136,10 @@ export class App {
       },
       onCompact: (phase) => {
         if (phase === 'start') this.note('el contexto se esta llenando: resumiendo la conversacion con los modelos gratis…', c.plum);
-        else this.note('conversacion resumida, sigo con espacio libre', c.ok);
+        else {
+          this.session.stamps = {}; // los mensajes se renumeran al resumir
+          this.note('conversacion resumida, sigo con espacio libre', c.ok);
+        }
       },
       permission: (view, preview, rule) => this.askPermission(view, preview, rule),
       allowProject: (rule) => addProjectAllow(this.cwd, rule),
@@ -1174,6 +1274,7 @@ export class App {
     }
     const text = stripAttachments(this.agent.messages[index].content);
     const files = await this.agent.rewind(index, { code });
+    for (const key of Object.keys(this.session.stamps ?? {})) if (Number(key) >= index) delete this.session.stamps[key];
     this.replay();
     this.editor.set(text);
     this.note(`conversacion rebobinada${files.length ? ` y codigo restaurado en ${files.length} ${files.length === 1 ? 'archivo' : 'archivos'}` : ''}; edita el mensaje y envialo`, c.ok);
@@ -1236,6 +1337,17 @@ const stripAttachments = (text) =>
     .replace(/\n\n\[Imagen #\d+\] \([^)]*\):\n[\s\S]*$/, '')
     .trim();
 
+// Resalta en blanco las letras que coinciden con lo escrito, como al buscar.
+function markMatch(label, query, active) {
+  const paint = active ? (text) => bold(c.sky(text)) : c.ice;
+  const at = query ? label.toLowerCase().indexOf(query) : -1;
+  if (at < 0) return paint(label);
+  return paint(label.slice(0, at)) + bold(fg('#ffffff')(label.slice(at, at + query.length))) + paint(label.slice(at + query.length));
+}
+
+// Cartel de cierre de una respuesta: cuanto trabajo y a que hora termino.
+const stampLine = (stamp) => [`${c.soft('◈')} ${dim(stamp)}`];
+
 const highlightTags = (line) => line.replace(/\[(Imagen #\d+|pegado #\d+ \+\d+ lineas)\]/g, (tag) => fg('#c4a6f5')(tag));
 
 function safe(fn) {
@@ -1252,6 +1364,27 @@ function openTarget(url) {
   const target = url.startsWith('file:') ? decodeURIComponent(url.replace(/^file:\/\/\/?/, process.platform === 'win32' ? '' : '/')) : url;
   const [command, args] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '""', target]] : process.platform === 'darwin' ? ['open', [target]] : ['xdg-open', [target]];
   spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+}
+
+// Texto del portapapeles del sistema (para pegar con clic derecho).
+function readClipboard() {
+  const [command, args] =
+    process.platform === 'win32'
+      ? ['powershell.exe', ['-NoProfile', '-Command', '[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw']]
+      : process.platform === 'darwin'
+        ? ['pbpaste', []]
+        : ['sh', ['-c', 'wl-paste --no-newline 2>/dev/null || xclip -selection clipboard -o']];
+  return new Promise((resolve) => {
+    let out = '';
+    try {
+      const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+      child.stdout.on('data', (chunk) => (out += chunk));
+      child.on('error', () => resolve(''));
+      child.on('close', () => resolve(out.replace(/\r\n/g, '\n').replace(/\n$/, '')));
+    } catch {
+      resolve('');
+    }
+  });
 }
 
 function copyNative(text) {

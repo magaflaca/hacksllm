@@ -29,7 +29,8 @@ function readDir(dir) {
       const file = path.join(dir, name);
       try {
         const { id, title, cwd, updated, messages } = JSON.parse(readFileSync(file, 'utf8'));
-        return { id, title, cwd, updated: updated ?? statSync(file).mtimeMs, count: messages?.length ?? 0, file };
+        const info = statSync(file);
+        return { id, title, cwd, updated: updated ?? info.mtimeMs, count: messages?.length ?? 0, size: info.size, file };
       } catch {
         return null;
       }

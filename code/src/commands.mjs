@@ -68,6 +68,48 @@ export const COMMANDS = [
   { name: 'login', description: 'clave', hidden: true },
 ];
 
+// Sintaxis que se muestra en gris despues del comando, y opciones que se sugieren al escribir el argumento.
+export const ARG_HINTS = {
+  model: '[modelo]',
+  effort: '[bajo|medio|alto]',
+  mode: '[normal|edits|plan|yolo]',
+  goal: '[objetivo|off]',
+  rename: '[nombre]',
+  compact: '[que conservar]',
+  review: '[en que fijarse]',
+  plan: '[tarea]',
+  import: '[claude|codex]',
+  bichito: '[zzz]',
+  key: '[api key]',
+  export: '[archivo.md]',
+};
+
+export function argChoices(app, name) {
+  switch (name) {
+    case 'model':
+      return [{ value: 'auto', hint: 'el mejor disponible, cambia solo si se agota' }, ...catalog(app.config).map((entry) => ({ value: entry.alias, hint: entry.note }))];
+    case 'effort':
+      return [
+        { value: 'bajo', hint: 'rapido y directo' },
+        { value: 'medio', hint: 'equilibrado' },
+        { value: 'alto', hint: 'piensa mas y prueba a fondo' },
+      ];
+    case 'mode':
+      return MODES.map((mode) => ({ value: mode, hint: `${MODE_INFO[mode].label}: ${MODE_INFO[mode].hint}` }));
+    case 'goal':
+      return [{ value: 'off', hint: 'quitar el objetivo activo' }];
+    case 'import':
+      return [
+        { value: 'claude', hint: 'conversaciones de Claude Code' },
+        { value: 'codex', hint: 'conversaciones de Codex' },
+      ];
+    case 'bichito':
+      return [{ value: 'zzz', hint: 'verlo dormir' }];
+    default:
+      return [];
+  }
+}
+
 const table = (rows) => rows.map(([a, b]) => `  ${c.sky(pad(a, 16))} ${c.soft(b)}`).join('\n');
 
 function openFile(file) {
