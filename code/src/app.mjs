@@ -22,7 +22,7 @@ import { FullScreen, parseMouse } from './ui/fullscreen.mjs';
 import { createDecoder } from './ui/keys.mjs';
 import { renderMarkdown } from './ui/markdown.mjs';
 import { bg, bold, c, dim, fg, pad, shimmer, strip, truncate, width, wrap } from './ui/term.mjs';
-import { Pet, PET_WIDTH } from './ui/pet.mjs';
+import { Pet, PET_ROWS, PET_WIDTH } from './ui/pet.mjs';
 import { ResumePicker } from './ui/resume.mjs';
 import { linksIn, paintSelection, selectedText, Transcript } from './ui/transcript.mjs';
 import { box, Field, HistorySearch, Menu } from './ui/widgets.mjs';
@@ -447,12 +447,14 @@ export class App {
       // La mascota va sobre la linea de la entrada, sin pisar el texto de la derecha.
       const pet = this.pet?.sprite(rightStart - PET_WIDTH - 8);
       if (pet && pet.x + PET_WIDTH + 8 <= rightStart) {
-        // Tres lineas: una extra arriba (la barra crece, no tapa nada), la del modelo y la regla de la entrada.
+        // Las lineas de arriba van solas (la barra crece, no tapa nada), la penultima comparte fila con el modelo y
+        // la ultima (las patitas) va sobre la regla de la entrada.
         this.clickRows.pet = lines.length;
-        lines.push(`${' '.repeat(pet.x)}${pet.lines[0]} ${pet.extra}`);
-        const middle = `${' '.repeat(pet.x)}${pet.lines[1]}`;
+        const top = pet.lines.slice(0, -2);
+        top.forEach((line, i) => lines.push(`${' '.repeat(pet.x)}${line}${i === 0 ? ` ${pet.extra}` : ''}`));
+        const middle = `${' '.repeat(pet.x)}${pet.lines.at(-2)}`;
         lines.push(middle + ' '.repeat(Math.max(1, rightStart - width(middle))) + right);
-        const feet = pet.lines[2].replace(/ /g, c.soft('─'));
+        const feet = pet.lines.at(-1).replace(/ /g, c.soft('─'));
         lines.push(`${c.soft('─'.repeat(pet.x))}${feet}${c.soft('─'.repeat(Math.max(0, W - 1 - pet.x - PET_WIDTH)))}`);
       } else {
         this.clickRows.pet = undefined;
@@ -756,7 +758,7 @@ export class App {
     const jump = this.clickRows?.jump;
     if (jump && row === jump.row && col >= jump.from && col < jump.to) return this.jumpToEnd();
     const petRow = this.clickRows?.pet;
-    if (petRow !== undefined && row >= petRow && row <= petRow + 2 && this.pet.hit(col)) return this.pet.leave();
+    if (petRow !== undefined && row >= petRow && row < petRow + PET_ROWS && this.pet.hit(col)) return this.pet.leave();
     const shells = this.clickRows?.shells;
     if (shells && row === this.clickRows.footer && col >= shells.from && col < shells.to) return this.jobsMenu();
     if (this.overlay?.click && this.clickRows.overlay !== undefined) return this.overlay.click(row - this.clickRows.overlay);
