@@ -1045,7 +1045,7 @@ export class App {
           const item = this.add((w) =>
             item.seconds
               ? reasoningBlock(item.text, item.seconds, w, this.config.verbose || item.expanded)
-              : [`${c.plum('»')} ${dim('pensando…')}`, ...(this.config.verbose || item.expanded ? wrap(dim(item.text.slice(-800)), w - 4).map((line) => `  ${line}`) : [])],
+              : [`${c.plum('»')} ${dim('pensando…')}`, ...(this.config.verbose || item.expanded ? item.text.slice(-800).split('\n').flatMap((part) => wrap(dim(part), w - 4)).map((line) => `  ${line}`) : [])],
           );
           item.toggle = () => (item.expanded = !item.expanded);
           item.text = '';

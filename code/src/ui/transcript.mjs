@@ -50,7 +50,9 @@ export class Transcript {
         // Nada puede pasar del ancho: se parte aqui por si un bloque no lo hizo.
         // Sin caracteres de control sueltos (un \r o un tab romperian la pantalla).
         const clean = (line) => String(line).replace(/\t/g, '  ').replace(/[\x00-\x06\x08\x0b-\x1a\x1c-\x1f\x7f]/g, ''); // \x07 y ESC se quedan: cierran los links
-        item.cache = { width, version: item.version, lines: lines.flatMap((line) => wrap(clean(line), width - 1)) };
+        // Una "linea" con saltos dentro (p.ej. razonamiento) se parte antes: un \n suelto descuadra la pantalla.
+        const split = lines.flatMap((line) => String(line).split(/\r?\n/));
+        item.cache = { width, version: item.version, lines: split.flatMap((line) => wrap(clean(line), width - 1)) };
       }
       if (!item.cache.lines.length) continue;
       if (out.length) for (let i = 0; i < item.gap; i++) out.push('');

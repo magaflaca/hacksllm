@@ -47,7 +47,8 @@ export class FullScreen {
     const width = cols();
     let out = `${SYNC_ON}\x1b[?25l`;
     for (let i = 0; i < frame.length; i++) {
-      const line = truncate(frame[i] ?? '', width - 1);
+      // Nunca un salto de linea dentro de una fila: moveria el cursor y romperia el cuadro.
+      const line = truncate(String(frame[i] ?? '').replace(/[\r\n]+/g, ' '), width - 1);
       if (line === this.prev[i]) continue;
       out += `\x1b[${i + 1};1H\x1b[0m${line}\x1b[0m\x1b[K`;
       this.prev[i] = line;
