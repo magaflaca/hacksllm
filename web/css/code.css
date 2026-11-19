@@ -9,6 +9,7 @@
   max-width: 1120px;
   margin: 0 auto;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 26px;
 }
 
@@ -43,11 +44,13 @@
 
 .install {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
 }
 
 .install-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
