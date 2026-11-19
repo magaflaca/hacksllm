@@ -7,7 +7,7 @@ import { MODE_INFO, MODES } from './core/permissions.mjs';
 import { importSources, listImports, reduceTranscript, transcriptText, turnsOf } from './core/importer.mjs';
 import { downloadPage, listPages, PUBLIC_BASE, publishFolder, removePage, siteFiles, slugify } from './core/pages.mjs';
 import { workApi } from './core/work.mjs';
-import { isAgy } from './core/agy.mjs';
+import { isAgy, projectProblem } from './core/agy.mjs';
 import { AGY_HINT, setAgy } from './agy-mode.mjs';
 import { expandCommand, loadAgents, loadCommands, loadMemory, memoryFiles } from './core/project.mjs';
 import { ago, listSessions, loadSession } from './core/sessions.mjs';
@@ -618,6 +618,8 @@ async function teleport(app) {
       progress.render = () => [notice(`${saved.length} archivos en ${path.relative(app.cwd, target) || '.'}`, c.ok)];
       progress.update();
     }
+    // Traidos a una carpeta nueva estando fuera de un proyecto (carpeta de usuario, raiz): esa pasa a ser el proyecto.
+    if (saved.length && target !== app.cwd && projectProblem(app.cwd)?.reason !== 'system' && projectProblem(app.cwd)) app.moveTo(target);
     const turns = item.messages.map((message) => ({ role: message.role === 'user' ? 'user' : 'assistant', text: String(message.content ?? '') }));
     const text = turns.map((turn) => `## ${turn.role === 'user' ? 'usuario' : 'bichi work'}\n${turn.text}`).join('\n\n');
     const reduced = await reduceTranscript(app.router, text, { signal: app.agent.controller?.signal });

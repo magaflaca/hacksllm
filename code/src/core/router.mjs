@@ -4,6 +4,7 @@ import { saveState } from '../config.mjs';
 import { chain, displayName } from '../providers.mjs';
 import { ApiError, streamChat } from './client.mjs';
 import { describeTools, parseToolCalls, toTextMessages } from './protocol.mjs';
+import { backoff, RETRIES, sleep } from './retry.mjs';
 
 const MINUTE = 60_000;
 const OPTIONAL_PARAMS = ['reasoning_effort', 'stream_options', 'parallel_tool_calls', 'max_tokens'];
@@ -53,11 +54,27 @@ export class Router {
   }
 
   // messages: historial canonico con el system primero. tools: [{name, description, parameters}].
-  async complete({ messages, tools, effort, signal, model, onStart = () => {}, onDelta = () => {}, onSwitch = () => {} }) {
+  // Si todos los modelos fallan por algo pasajero (red, servidor, cuota del momento), se espera y se vuelve a
+  // intentar con espera creciente, como Claude Code; onRetry lo cuenta.
+  async complete(options) {
+    for (let round = 0; ; round++) {
+      try {
+        return await this.attempt(options);
+      } catch (error) {
+        if (!error.passing || round >= RETRIES - 1 || options.signal?.aborted) throw error;
+        const wait = backoff(round);
+        options.onRetry?.({ attempt: round + 1, of: RETRIES, wait, reason: error.reason });
+        await sleep(wait, options.signal);
+      }
+    }
+  }
+
+  async attempt({ messages, tools, effort, signal, model, onStart = () => {}, onDelta = () => {}, onSwitch = () => {} }) {
     const { list, awake } = this.candidates(model ?? this.config.model);
     if (!list.length) throw new Error('no hay modelos configurados. usa /config para poner una api key.');
     const queue = awake.length ? awake : [...list].sort((a, b) => (this.state.cooldowns[a.key] ?? 0) - (this.state.cooldowns[b.key] ?? 0)).slice(0, 1);
     const failures = [];
+    let passing = true; // todos los fallos fueron pasajeros (no clave mala ni modelo inexistente)
     for (let index = 0; index < queue.length; index++) {
       const entry = queue[index];
       let attempts = 0;
@@ -87,6 +104,7 @@ export class Router {
             if (streamed) onSwitch({ from: entry, to: entry, reason: 'reintento', reset: true });
             continue;
           }
+          if (verdict.kind === 'auth' || verdict.reason === 'modelo no disponible') passing = false;
           if (verdict.kind === 'auth') for (const other of list.filter((item) => item.provider.name === entry.provider.name)) this.rest(other.key, verdict.rest);
           else this.rest(key, verdict.rest);
           failures.push(`${this.name(entry)}: ${verdict.reason ?? error.message}`);
@@ -96,7 +114,7 @@ export class Router {
         }
       }
     }
-    throw new Error(`ningun modelo respondio. ${failures.join(' · ')}`);
+    throw Object.assign(new Error(`ningun modelo respondio. ${failures.join(' · ')}`), { passing: passing && failures.length > 0, reason: failures.at(-1)?.split(': ').pop() ?? 'fallo' });
   }
 
   toolMode(entry) {

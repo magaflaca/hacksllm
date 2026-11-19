@@ -216,6 +216,7 @@ export class Agent {
         shown = 0;
         this.ui.onSwitch?.(info);
       },
+      onRetry: (info) => this.ui.onRetry?.(info),
       onDelta: (delta) => {
         if (delta.type === 'reasoning') return this.ui.onReasoning?.(delta.text);
         raw += delta.text;

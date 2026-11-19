@@ -276,6 +276,17 @@ export class App {
     this.add(() => [notice(text, color)], { gap: 0 });
   }
 
+  // Pasar a trabajar en otra carpeta (el modo agy la crea para conversaciones sin proyecto).
+  moveTo(dir) {
+    process.chdir(dir);
+    this.cwd = dir;
+    this.agent.cwd = dir;
+    this.session.cwd = dir;
+    this.files = [];
+    this.refreshFiles();
+    this.note(`trabajando en ${dir}`, c.ok);
+  }
+
   clearConversation() {
     this.saveSession();
     this.session = { id: newSessionId(), cwd: this.cwd, created: Date.now(), messages: [] };
@@ -1324,6 +1335,7 @@ export class App {
         this.add(() => deniedBlock(view, reason));
       },
       onNotice: (text) => this.note(text, c.warn),
+      onRetry: ({ attempt, of, wait, reason }) => this.note(`${reason} · reintento ${attempt} de ${of} en ${Math.ceil(wait / 1000)}s`, c.warn),
       onSteer: (text) => {
         this.endText();
         // Ya lo leyo: el mensaje en cola pasa al sombreado normal.

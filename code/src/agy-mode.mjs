@@ -2,7 +2,8 @@
 // Las escrituras y los comandos que pide agy pasan por los permisos de bichi (y por /undo); el contexto, la memoria
 // de la conversacion y como se reparte el trabajo los lleva agy, que retoma su propia conversacion en cada turno.
 import { existsSync } from 'node:fs';
-import { readFile, rm, rmdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, rmdir, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { deleteTool, projectProblem, runAgyTurn, translator } from './core/agy.mjs';
 import { write } from './tools/fs.mjs';
@@ -12,25 +13,45 @@ import { saveConfig } from './config.mjs';
 import { notice } from './ui/blocks.mjs';
 import { c } from './ui/term.mjs';
 
-export const AGY_HINT = 'Antigravity con Gemini 3.8 Flash (gpt-oss de respaldo) trabajando en tu PC';
+export const AGY_HINT = 'Antigravity · Gemini 3.8 Flash';
 
 // Entrar o salir del modo agy. Al salir se vuelve a auto (los modelos de siempre siguen con la misma conversacion).
 export function setAgy(app, on) {
-  if (on) {
-    const problem = projectProblem(app.cwd);
-    if (problem) return app.print(notice(problem, c.warn));
-  }
   app.config.model = on ? 'agy' : 'auto';
   app.router.current = null;
   saveConfig(app.config);
-  app.print(
-    notice(
-      on
-        ? 'modo agy: Antigravity trabaja en esta carpeta desde el VPS (lee, edita y ejecuta aqui, con tus permisos). el esfuerzo elige Gemini 3.8 Flash bajo, medio o alto. /agy para volver'
-        : `modelo: ${app.modelLabel()}`,
-      c.ok,
-    ),
-  );
+  app.print(notice(on ? 'modo agy · /agy para volver' : `modelo: ${app.modelLabel()}`, c.ok));
+}
+
+// Una conversacion sin carpeta de proyecto (bichi abierto en la carpeta de usuario o en la raiz del disco): se
+// ofrece crear una con el nombre de la conversacion y pasar a trabajar ahi.
+async function ensureProject(app) {
+  const problem = projectProblem(app.cwd);
+  if (!problem) return true;
+  if (problem.reason === 'system') throw new Error(problem.message);
+  const base = problem.reason === 'home' ? app.cwd : os.homedir();
+  const name = (app.session.title ?? '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/^(work|importada): /, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'proyecto-bichi';
+  let suggested = path.join(base, name);
+  for (let n = 2; existsSync(suggested); n++) suggested = path.join(base, `${name}-${n}`);
+  const choice = await app.choose({
+    title: 'esta conversacion no tiene carpeta de proyecto',
+    options: [
+      { label: `crear ${suggested}`, value: 'create' },
+      { label: 'crearla con otro nombre', value: 'name' },
+      { label: 'cancelar', value: null },
+    ],
+    escape: null,
+  });
+  if (!choice) return false;
+  let target = suggested;
+  if (choice === 'name') {
+    const typed = await app.field({ title: 'nombre de la carpeta', initial: path.basename(suggested), hint: `se crea dentro de ${base}` });
+    if (!typed?.trim()) return false;
+    target = path.resolve(base, typed.trim());
+  }
+  await mkdir(target, { recursive: true });
+  app.moveTo(target);
+  return true;
 }
 
 const STEPS = {
@@ -50,8 +71,8 @@ const transcript = (messages) =>
     .slice(-CONTEXT);
 
 export async function runAgy(app, content) {
-  const problem = projectProblem(app.cwd);
-  if (problem) throw new Error(problem);
+  // Sin carpeta y sin crear una: el mensaje vuelve a la entrada como si se hubiera cancelado.
+  if (!(await ensureProject(app))) throw Object.assign(new Error('cancelado'), { name: 'AbortError' });
   const { agent } = app;
   const ui = agent.ui;
   agent.controller = new AbortController();
@@ -97,6 +118,7 @@ export async function runAgy(app, content) {
       else if (event.type === 'step') step(event);
     },
     onStatus: (text) => app.note(text, c.plum),
+    onRetry: (info) => ui.onRetry?.(info),
 
     // Escribir un archivo: con su diff, su permiso y su checkpoint para /undo.
     async put(rel, data) {

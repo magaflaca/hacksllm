@@ -39,6 +39,7 @@ const LIMITS = {
   approval: 30 * 60_000, // lo que puede esperar algo que pide permiso al usuario (escribir, borrar, ejecutar)
   run: 30 * 60_000, // espera maxima de un comando
   turn: 25 * 60_000, // duracion maxima de un turno
+  silence: 30_000, // sin noticias de bichi code (ni respuestas ni latidos) en este tiempo, el turno se corta
   reply: 64 << 20, // cuerpo de /agy/reply
   start: 8 << 20, // cuerpo de /agy/turn (el arbol va dentro)
 };
@@ -140,6 +141,11 @@ class Turn {
     this.bytes = 0;
     this.controller = new AbortController();
     this.closed = false;
+    this.seen = Date.now(); // ultima noticia de bichi code: por la web, cerrar la ventana no siempre corta la conexion
+  }
+
+  stale() {
+    return Date.now() - this.seen > LIMITS.silence;
   }
 
   send(message) {
@@ -429,7 +435,11 @@ function runModel(turn, { model, resume, mode, folder, prompt }) {
       for (const out of parseAgy(event)) {
         if (out.type === 'final') final = out.text;
         else if (out.type === 'fail') failure = out.message;
-        else if (out.type === 'resume') conversation = out.id;
+        else if (out.type === 'resume') {
+          conversation = out.id;
+          // Se avisa ya: si la conexion se corta a mitad, bichi puede retomar esta misma conversacion.
+          turn.send({ t: 'resume', model: turn.modelKey, id: out.id });
+        }
         else turn.send({ t: 'ev', ...out });
       }
       // Lo que agy piensa (si lo manda) tambien se ve en bichi.
@@ -454,9 +464,10 @@ async function runTurn(turn) {
   if (!order.length) order.push(...MODELS);
   for (const [index, entry] of order.entries()) {
     if (turn.controller.signal.aborted) break;
-    if (index) turn.send({ t: 'status', text: 'el primer modelo no pudo; sigo con el de respaldo' });
+    if (index) turn.send({ t: 'status', text: 'cambiando de modelo…' });
     const resume = /^[A-Za-z0-9_-]{1,80}$/.test(resumes[entry.key] ?? '') ? resumes[entry.key] : null;
     const prompt = resume ? message : preamble(body, folder) + message;
+    turn.modelKey = entry.key;
     const result = await runModel(turn, { model: entry.model(effort), resume, mode, folder, prompt });
     if (result.ok) return { ok: true, text: result.final, model: entry.key, resume: { ...resumes, [entry.key]: result.conversation ?? resume } };
     if (turn.controller.signal.aborted) break;
@@ -490,7 +501,10 @@ async function readJson(req, max) {
 async function startTurn(req, res, owner) {
   const body = await readJson(req, LIMITS.start);
   if (!String(body.message ?? '').trim()) return fail(res, 400, 'falta el mensaje');
-  if (byOwner.has(owner)) return fail(res, 409, 'ya tienes un turno de agy en marcha');
+  const previous = byOwner.get(owner);
+  if (previous && !previous.stale()) return fail(res, 409, 'ya tienes un turno de agy en marcha');
+  // Uno abandonado (bichi se cerro sin avisar) se corta y deja sitio al nuevo.
+  if (previous) previous.controller.abort();
   const turn = new Turn(owner, res, body);
   turns.set(turn.id, turn);
   byOwner.set(owner, turn);
@@ -498,7 +512,10 @@ async function startTurn(req, res, owner) {
   turn.send({ t: 'ready', turn: turn.id });
   const abort = () => turn.controller.abort();
   res.on('close', abort);
-  const keepalive = setInterval(() => turn.send({ t: 'ping' }), 15_000);
+  const keepalive = setInterval(() => {
+    turn.send({ t: 'ping' });
+    if (turn.stale()) abort();
+  }, 10_000);
   const deadline = setTimeout(abort, LIMITS.turn);
   turn.controller.signal.addEventListener('abort', () => runner('stop', turn.id), { once: true });
   let slot = false;
@@ -536,6 +553,7 @@ const server = http.createServer(async (req, res) => {
     const body = await readJson(req, LIMITS.reply);
     const turn = turns.get(String(body.turn ?? ''));
     if (!turn || turn.owner !== owner) return fail(res, 404, 'ese turno ya no esta');
+    turn.seen = Date.now();
     if (action === 'reply') {
       for (const reply of Array.isArray(body.replies) ? body.replies : []) turn.answer(reply);
       return send(res, 200, { ok: true });
