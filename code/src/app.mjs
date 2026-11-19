@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { addProjectAllow, flushState, saveConfig, saveState, VERSION } from './config.mjs';
 import { Agent } from './core/agent.mjs';
-import { clipboardImage, describe, imagePath, storeImage } from './core/images.mjs';
+import { clipboardImage, imagePath, storeImage } from './core/images.mjs';
 import { MODE_INFO, MODES } from './core/permissions.mjs';
 import { loadCommands } from './core/project.mjs';
 import { listSessions, loadSession, newSessionId, saveSession } from './core/sessions.mjs';
@@ -1140,14 +1140,9 @@ export class App {
       let content = this.withContext(text);
       // agy (Gemini) ve las imagenes el mismo: van tal cual con el mensaje, sin describirlas antes.
       if (isAgy(this.config.model)) return this.agyTurns(content, images.map(([tag, image]) => ({ tag, name: image.name === 'portapapeles' ? path.basename(image.file) : image.name, data: readFileSync(image.file).toString('base64') })));
-      for (const [tag, image] of images) {
-        const item = this.add(() => [notice(`mirando ${tag}…`, c.plum)], { gap: 0 });
-        const description = await describe(this.router, image);
-        item.render = () => [notice(`${tag} vista`, c.plum)];
-        item.update();
-        content += `\n\n${tag} (${image.name}, guardada en ${image.file}):\n${description}`;
-      }
-      await this.agent.send(content);
+      // El modelo ve las imagenes el mismo: van adjuntas y en el texto queda de donde son.
+      for (const [tag, image] of images) content += `\n\n${tag}: imagen adjunta (${image.name}, guardada en ${image.file})`;
+      await this.agent.send(content, { images: images.map(([, image]) => image.file) });
     });
     this.unsent = null;
     if (await this.leftovers(ended)) return;

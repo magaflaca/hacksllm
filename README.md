@@ -157,7 +157,7 @@ El instalador deja `bichi` en `~/.bichi/bin` (en el PATH) y, si no hay Node 20+,
 - **Otros proveedores**: NVIDIA build, Mistral, Groq, OpenRouter, Cerebras, Ollama o cualquier api compatible
   desde `/config`.
 - **App de pantalla completa**: historial con scroll y raton (seleccion que copia, links clicables), comandos y
-  archivos sugeridos encima de la entrada, imagenes (alt+v o pegar una ruta; un modelo con vision las describe),
+  archivos sugeridos encima de la entrada, imagenes (alt+v o pegar una ruta; van tal cual al modelo, y en modo agy las mira Gemini),
   esc esc para rebobinar conversacion y codigo, `/goal` para trabajar solo hasta cumplir algo, `/context`.
 - **Traer conversaciones**: `/import` de Claude Code o Codex y `/tp` de bichi work (boton "llevar a bichi code",
   guardado en `/opt/hacksllm/data/transport` por clave). Las grandes se resumen por partes con los modelos gratis;

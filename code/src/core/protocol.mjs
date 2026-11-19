@@ -168,8 +168,9 @@ export function toTextMessages(messages) {
       const last = out.at(-1);
       if (last?.role === 'user' && last.toolResults) last.content += `\n\n${block}`;
       else out.push({ role: 'user', content: block, toolResults: true });
-    } else if (message.role === 'user' && out.at(-1)?.toolResults) {
-      out.at(-1).content += `\n\n${typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}`;
+    } else if (message.role === 'user' && out.at(-1)?.toolResults && typeof message.content === 'string') {
+      // Con imagenes (contenido en partes) va como mensaje aparte para no volcar la imagen en el texto.
+      out.at(-1).content += `\n\n${message.content}`;
     } else out.push({ role: message.role, content: message.content ?? '' });
   }
   return out.map(({ role, content }) => ({ role, content }));

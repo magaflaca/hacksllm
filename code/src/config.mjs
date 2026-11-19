@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import os from 'node:os';
 import path from 'node:path';
 
-export const VERSION = '1.11.2';
+export const VERSION = '1.11.3';
 export const HOME = process.env.BICHI_HOME || path.join(os.homedir(), '.bichi');
 export const SITE = process.env.BICHI_SITE || 'https://llm.hacks.win';
 

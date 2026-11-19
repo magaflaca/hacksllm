@@ -3,6 +3,7 @@ import { rm, writeFile } from 'node:fs/promises';
 import { invalidate } from '../tools/files.mjs';
 import { schema, toolset } from '../tools/index.mjs';
 import { runHooks } from './hooks.mjs';
+import { withImages } from './images.mjs';
 import { decide, ruleFor } from './permissions.mjs';
 import { loadAgents } from './project.mjs';
 import { looksLikeCall, parseArgs, toTextMessages, visiblePrefix } from './protocol.mjs';
@@ -62,8 +63,9 @@ export class Agent {
     this.controller?.abort();
   }
 
-  async send(content) {
-    this.messages.push({ role: 'user', content });
+  // images: rutas de imagenes que van con el mensaje (se adjuntan al pedir, ver withImages).
+  async send(content, { images = [] } = {}) {
+    this.messages.push({ role: 'user', content, ...(images.length ? { images } : {}) });
     this.turns.push({ index: this.messages.length - 1, files: new Map() });
     this.busy = true;
     this.controller = new AbortController();
@@ -197,7 +199,7 @@ export class Agent {
   }
 
   async request(tools, signal) {
-    const messages = [{ role: 'system', content: this.system() }, ...this.payload()];
+    const messages = [{ role: 'system', content: this.system() }, ...withImages(this.payload())];
     let shown = 0;
     let raw = '';
     const result = await this.router.complete({

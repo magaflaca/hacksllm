@@ -1,12 +1,12 @@
 // Imagenes: pegadas como ruta, arrastradas a la terminal o con alt+v desde el portapapeles. Se guardan en
-// ~/.bichi/images y un modelo con vision las describe una vez; la descripcion acompana al mensaje, asi que
-// sirve con cualquier modelo (aunque solo lea texto).
+// ~/.bichi/images y van tal cual al modelo junto al mensaje (los modelos de hacksllm las ven todos: el gateway las
+// pasa a uno con vision si hace falta). En el historial solo queda la ruta; la imagen se adjunta al pedir.
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { HOME, saveState } from '../config.mjs';
+import { HOME } from '../config.mjs';
 
 const DIR = path.join(HOME, 'images');
 const TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp' };
@@ -60,22 +60,25 @@ export async function clipboardImage() {
 
 export const dataUrl = (image) => `data:${TYPES[path.extname(image.file).toLowerCase()] ?? 'image/png'};base64,${readFileSync(image.file).toString('base64')}`;
 
-const PROMPT =
-  'Describe esta imagen con todo el detalle util para un programador: transcribe exactamente cualquier texto, codigo, mensajes de error o datos que aparezcan; describe la interfaz, el diseno, los colores y la disposicion si es una captura o un mockup. Responde solo con la descripcion, en espanol.';
+// Mensajes con imagenes adjuntas: las `MAX_IMAGES` mas recientes viajan como imagen; las anteriores se quedan en la
+// ruta del texto (el modelo ya las vio y lo dijo en su respuesta). Las que ya no existen se saltan.
+const MAX_IMAGES = 4;
+const cache = new Map();
+const inlined = (file) => {
+  if (!cache.has(file)) cache.set(file, dataUrl({ file }));
+  return cache.get(file);
+};
 
-// Descripcion de la imagen (una vez por imagen; se recuerda en el estado).
-export async function describe(router, image, signal) {
-  const notes = (router.state.imageNotes ??= {});
-  if (notes[image.hash]) return notes[image.hash];
-  const result = await router.complete({
-    messages: [
-      { role: 'system', content: 'Eres un asistente que describe imagenes con precision.' },
-      { role: 'user', content: [{ type: 'text', text: PROMPT }, { type: 'image_url', image_url: { url: dataUrl(image) } }] },
-    ],
-    tools: [],
-    signal,
-  });
-  notes[image.hash] = result.text.trim();
-  saveState(router.state);
-  return notes[image.hash];
+export function withImages(messages) {
+  let left = MAX_IMAGES;
+  const out = [...messages];
+  for (let index = out.length - 1; index >= 0 && left > 0; index--) {
+    const message = out[index];
+    if (message.role !== 'user' || !message.images?.length) continue;
+    const files = message.images.filter((file) => existsSync(file)).slice(-left);
+    left -= files.length;
+    const { images, ...rest } = message;
+    out[index] = files.length ? { ...rest, content: [{ type: 'text', text: String(message.content) }, ...files.map((file) => ({ type: 'image_url', image_url: { url: inlined(file) } }))] } : rest;
+  }
+  return out.map(({ images, ...message }) => message);
 }
