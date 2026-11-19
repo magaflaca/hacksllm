@@ -16,9 +16,31 @@ export class Editor {
   set(text, cursor = text.length) {
     this.text = text;
     this.cursor = Math.max(0, Math.min(cursor, text.length));
+    this.anchor = null;
+  }
+
+  // Seleccion: del ancla (donde empezo) al cursor. null si no hay.
+  selection() {
+    if (this.anchor === null || this.anchor === undefined || this.anchor === this.cursor) return null;
+    return [Math.min(this.anchor, this.cursor), Math.max(this.anchor, this.cursor)];
+  }
+
+  selectedText() {
+    const range = this.selection();
+    return range ? this.text.slice(...range) : '';
+  }
+
+  deleteSelection() {
+    const range = this.selection();
+    this.anchor = null;
+    if (!range) return false;
+    this.text = this.text.slice(0, range[0]) + this.text.slice(range[1]);
+    this.cursor = range[0];
+    return true;
   }
 
   insert(text) {
+    this.deleteSelection();
     this.text = this.text.slice(0, this.cursor) + text + this.text.slice(this.cursor);
     this.cursor += text.length;
   }
@@ -158,6 +180,7 @@ export class Editor {
   // Parte el texto en filas de `inner` columnas y ubica el cursor.
   layout(inner) {
     const rows = [];
+    const starts = []; // indice del texto donde empieza cada fila
     let cursor = { row: 0, col: 0 };
     let offset = 0;
     for (const line of this.text.split('\n')) {
@@ -171,6 +194,7 @@ export class Editor {
         const w = charWidth(char.codePointAt(0));
         if (used + w > inner) {
           rows.push(row);
+          starts.push(index - row.length);
           row = '';
           used = 0;
         }
@@ -181,14 +205,16 @@ export class Editor {
       }
       if (used >= inner && index === this.cursor) {
         rows.push(row);
+        starts.push(index - row.length);
         row = '';
         used = 0;
       }
       place();
       rows.push(row);
+      starts.push(index - row.length);
       offset = index + 1;
     }
-    return { rows, cursor };
+    return { rows, cursor, starts };
   }
 
   // Indice del texto en la fila/columna visible de layout(inner) (para poner el cursor con un clic).

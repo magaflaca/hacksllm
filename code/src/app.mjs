@@ -479,15 +479,23 @@ export class App {
 
   inputLines(W) {
     const inner = W - 4;
-    const { rows, cursor } = this.editor.layout(inner);
+    const { rows, cursor, starts } = this.editor.layout(inner);
     const text = this.editor.text;
+    const range = this.editor.selection();
+    // Fila con la parte seleccionada en azul (como al seleccionar en la terminal).
+    const paint = (row, index) => {
+      const from = range ? Math.max(range[0], starts[index]) - starts[index] : -1;
+      const to = range ? Math.min(range[1], starts[index] + row.length) - starts[index] : -1;
+      if (to <= from || from < 0) return highlightTags(row);
+      return row.slice(0, from) + bg('#3d74c4')(fg('#ffffff')(row.slice(from, to))) + row.slice(to);
+    };
     const prompt = text.startsWith('!') ? c.warn('!') : text.startsWith('#') ? c.plum('#') : this.running ? c.soft('❯') : c.brand('❯');
     if (!text) {
       const placeholder = this.running ? 'escribe para redirigir a bichi sin parar el trabajo' : 'Prueba "explicame este proyecto" o "arregla los tests"';
       return { lines: [`${prompt} ${dim(placeholder)}`], cursor: { row: 0, col: 2 } };
     }
     const shift = rows.length > MAX_INPUT_ROWS ? Math.max(0, Math.min(cursor.row - MAX_INPUT_ROWS + 1, rows.length - MAX_INPUT_ROWS)) : 0;
-    const lines = rows.slice(shift, shift + MAX_INPUT_ROWS).map((row, i) => `${i === 0 && shift === 0 ? prompt : ' '} ${highlightTags(row)}`);
+    const lines = rows.slice(shift, shift + MAX_INPUT_ROWS).map((row, i) => `${i === 0 && shift === 0 ? prompt : ' '} ${paint(row, i + shift)}`);
     // Sintaxis del comando en gris mientras falta el argumento: "/model [modelo]".
     const command = /^\/([\w-]+) ?$/.exec(text);
     if (command && ARG_HINTS[command[1]] && lines.length === 1) lines[0] += `${text.endsWith(' ') ? '' : ' '}${dim(ARG_HINTS[command[1]])}`;
@@ -672,12 +680,29 @@ export class App {
     if (event.type === 'press' && event.button === 2) return this.pasteClipboard();
     if (event.type === 'press' && event.button === 0) {
       this.selection = null;
+      this.editor.anchor = null;
       if (event.y === 0 && this.sticky !== null) {
         this.pressed = null;
         return this.scroll(this.sticky - this.top);
       }
       this.pressed = inView ? { line: this.top + event.y, col: event.x } : null;
       if (!inView) this.clickBottom(event.y - this.viewH, event.x);
+      return this.render();
+    }
+    // Arrastrar dentro de la entrada selecciona texto; al soltar se copia.
+    if (event.type === 'drag' && this.inputDrag && this.clickRows?.input) {
+      this.editor.cursor = this.inputPosition(event.y - this.viewH, event.x);
+      return this.render();
+    }
+    if (event.type === 'release' && this.inputDrag) {
+      this.inputDrag = false;
+      const text = this.editor.selectedText();
+      if (!text) this.editor.anchor = null;
+      else {
+        this.term.copy(text);
+        copyNative(text);
+        this.flash('copiado · escribe para reemplazarlo');
+      }
       return this.render();
     }
     if (event.type === 'drag' && this.pressed) {
@@ -717,6 +742,15 @@ export class App {
     }
   }
 
+  // Indice del texto de la entrada bajo una fila/columna de la parte de abajo (fuera de la caja, se ajusta al borde).
+  inputPosition(row, col) {
+    const input = this.clickRows.input;
+    const inside = Math.max(0, Math.min(input.count - 1, row - input.row));
+    if (row < input.row) return input.shift ? this.editor.positionAt(input.inner, input.shift, 0) : 0;
+    if (row >= input.row + input.count) return this.editor.positionAt(input.inner, inside + input.shift, Infinity);
+    return this.editor.positionAt(input.inner, inside + input.shift, Math.max(0, col - 2));
+  }
+
   // Clics en la parte de abajo: el boton de ir al final y las sugerencias.
   clickBottom(row, col) {
     const jump = this.clickRows?.jump;
@@ -729,7 +763,9 @@ export class App {
     // Clic en la entrada: el cursor va ahi.
     const input = this.clickRows?.input;
     if (input && !this.overlay && row >= input.row && row < input.row + input.count && this.editor.text) {
-      this.editor.cursor = this.editor.positionAt(input.inner, row - input.row + input.shift, Math.max(0, col - 2));
+      this.editor.cursor = this.inputPosition(row, col);
+      this.editor.anchor = this.editor.cursor;
+      this.inputDrag = true;
       this.updateSuggestions();
       return this.render();
     }
@@ -830,6 +866,34 @@ export class App {
     const editor = this.editor;
     const name = key.name;
 
+    // Con texto seleccionado en la entrada: borrar lo quita, escribir lo reemplaza, shift+flechas lo amplian,
+    // ctrl+c lo copia y cualquier otro movimiento lo suelta.
+    if (editor.selection()) {
+      if (name === 'backspace' || name === 'delete') {
+        editor.deleteSelection();
+        this.updateSuggestions();
+        return this.render();
+      }
+      if (key.ctrl && name === 'c') {
+        const text = editor.selectedText();
+        this.term.copy(text);
+        copyNative(text);
+        editor.anchor = null;
+        this.flash('copiado');
+        return this.render();
+      }
+      const typing = name === 'paste' || name === 'enter' || (key.text && !key.ctrl && !key.meta);
+      if (!typing && !(key.shift && ['left', 'right', 'home', 'end', 'up', 'down'].includes(name))) editor.anchor = null;
+    }
+    if (key.shift && ['left', 'right', 'home', 'end'].includes(name)) {
+      editor.anchor ??= editor.cursor;
+      if (name === 'left') key.ctrl ? editor.wordLeft() : editor.left();
+      else if (name === 'right') key.ctrl ? editor.wordRight() : editor.right();
+      else if (name === 'home') editor.home();
+      else editor.end();
+      return this.render();
+    }
+
     if (key.ctrl && name === 'c') {
       if (this.running) return this.interrupt();
       if (editor.text) {
@@ -888,7 +952,10 @@ export class App {
     else if (name === 'home' || (key.ctrl && name === 'a')) editor.home();
     else if (name === 'end' || (key.ctrl && name === 'e')) editor.end();
     else if (name === 'up') {
-      if (!editor.up()) editor.historyPrev();
+      if (editor.up()) {
+        /* subio de linea */
+      } else if (this.running && this.agent.queue.length) this.unqueue();
+      else editor.historyPrev();
     } else if (name === 'down') {
       if (!editor.down()) editor.historyNext();
     } else if (key.ctrl && name === 'u') editor.killToStart();
@@ -910,6 +977,15 @@ export class App {
     } else if (key.text && !key.ctrl && !key.meta) editor.insert(key.text);
     this.updateSuggestions();
     this.render();
+  }
+
+  // Los mensajes que mandaste mientras bichi trabajaba y que aun no leyo vuelven a la entrada para editarlos.
+  unqueue() {
+    const texts = this.agent.queue.splice(0);
+    for (const item of this.pendingSteer.splice(0)) item.remove();
+    const current = this.editor.text;
+    this.editor.set([...texts, current].filter(Boolean).join('\n'));
+    this.flash('mensaje en cola de vuelta para editarlo · enter lo manda otra vez');
   }
 
   // Una marca de imagen se borra entera.
@@ -999,6 +1075,17 @@ export class App {
     this.follow = true;
     if (!this.session.title && !display.startsWith('/')) this.session.title = display.replace(/\[Imagen #\d+\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
     const images = [...this.images].filter(([tag]) => text.includes(tag));
+    // Si lo cancelas (esc) antes de que el modelo conteste o haga algo, el mensaje vuelve a la entrada como estaba.
+    const mark = this.transcript.items.length;
+    const index = this.agent.messages.length;
+    this.unsent = () => {
+      if (!this.agent.messages.slice(index).every((message) => message.role === 'user')) return false;
+      this.agent.messages.splice(index);
+      if (this.agent.turns.at(-1)?.index === index) this.agent.turns.pop();
+      for (const item of this.transcript.items.slice(mark)) item.remove();
+      this.editor.set([display, this.editor.text].filter(Boolean).join('\n'));
+      return true;
+    };
     this.addUser(display);
     await this.run(async () => {
       let content = this.withContext(text);
@@ -1011,6 +1098,7 @@ export class App {
       }
       await this.agent.send(content);
     });
+    this.unsent = null;
     await this.pursueGoal();
   }
 
@@ -1064,8 +1152,13 @@ export class App {
     } catch (error) {
       this.endText();
       if (error.name === 'AbortError') {
-        this.note('interrumpido · dime que hago distinto', c.warn);
-        this.interruptedLast = true;
+        if (this.unsent?.()) {
+          this.running.interrupted = true;
+          this.flash('cancelado · tu mensaje volvio a la entrada para editarlo');
+        } else {
+          this.note('interrumpido · dime que hago distinto', c.warn);
+          this.interruptedLast = true;
+        }
       } else {
         this.note(error.message, c.err);
         this.note('prueba otra vez, /model para elegir otro modelo o /config para tus claves');
@@ -1477,12 +1570,13 @@ export function formatTokens(count) {
 
 const SHORTCUTS = [
   ['enter', 'enviar'],
-  ['alt+enter · ctrl+j · \\ enter', 'nueva linea'],
+  ['shift+enter · alt+enter · \\ enter', 'nueva linea'],
   ['shift+tab', 'cambiar modo: normal, acepta ediciones, plan, sin preguntas'],
-  ['esc', 'interrumpir a bichi'],
+  ['esc', 'interrumpir a bichi (si aun no contesto, tu mensaje vuelve a la entrada)'],
   ['esc esc', 'salir de bichi (con la entrada vacia; si no, la borra)'],
   ['/rewind', 'volver a un mensaje anterior (con o sin el codigo)'],
-  ['escribir mientras trabaja', 'redirigir sin parar (entra en el siguiente paso)'],
+  ['escribir mientras trabaja', 'redirigir sin parar (entra en el siguiente paso; flecha arriba lo trae para editarlo)'],
+  ['clic · arrastrar en la entrada', 'mover el cursor · seleccionar (escribir reemplaza, shift+flechas amplia)'],
   ['/', 'comandos y skills'],
   ['@ruta', 'mencionar un archivo o carpeta (tab entra en carpetas)'],
   ['alt+v · pegar una ruta', 'adjuntar una imagen'],
