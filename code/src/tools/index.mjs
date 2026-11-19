@@ -4,8 +4,9 @@ import { ask, exitPlan, task, todo } from './meta.mjs';
 import { glob, grep } from './search.mjs';
 import { shell, shellKill, shellOutput } from './shell.mjs';
 import { webFetch, webSearch } from './web.mjs';
+import { PAGE_TOOLS } from './pages.mjs';
 
-export const BUILTIN = [read, write, edit, ls, glob, grep, shell, shellOutput, shellKill, webFetch, webSearch, todo, task, ask, exitPlan];
+export const BUILTIN = [read, write, edit, ls, glob, grep, shell, shellOutput, shellKill, webFetch, webSearch, ...PAGE_TOOLS, todo, task, ask, exitPlan];
 
 // Herramientas para un agente: los subagentes no lanzan otros ni preguntan, y un agente propio puede limitarlas.
 export function toolset({ extra = [], sub = false, allow = null, plan = false } = {}) {

@@ -1,15 +1,17 @@
 // Comandos con barra.
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { loadSettings, paths, saveConfig, SITE, VERSION } from './config.mjs';
+import { loadSettings, paths, saveConfig, VERSION } from './config.mjs';
 import { MODE_INFO, MODES } from './core/permissions.mjs';
-import { importSources, listImports, reduceTranscript, transcriptOf } from './core/importer.mjs';
+import { importSources, listImports, reduceTranscript, transcriptText, turnsOf } from './core/importer.mjs';
+import { downloadPage, listPages, PUBLIC_BASE, publishFolder, removePage, siteFiles, slugify } from './core/pages.mjs';
+import { workApi } from './core/work.mjs';
 import { expandCommand, loadAgents, loadCommands, loadMemory, memoryFiles } from './core/project.mjs';
 import { ago, listSessions, loadSession } from './core/sessions.mjs';
 import { findSkill, listSkills, skillText } from './core/skills.mjs';
 import { schema } from './tools/index.mjs';
-import { catalog, displayName, providerOf } from './providers.mjs';
+import { catalog, displayName } from './providers.mjs';
 import { openConfig, pickEffort, pickModel, providersMenu, sessionOptions, setKey } from './settings-ui.mjs';
 import { servers } from './tools/mcp.mjs';
 import { update } from './updater.mjs';
@@ -42,6 +44,7 @@ export const COMMANDS = [
   { name: 'rewind', description: 'volver a un mensaje anterior, con o sin el codigo' },
   { name: 'goal', description: 'objetivo: bichi trabaja solo hasta cumplirlo' },
   { name: 'context', description: 'en que se esta usando el contexto' },
+  { name: 'paginas', description: 'bichi paginas: publicar una carpeta, ver, traer o quitar tus webs' },
   { name: 'import', description: 'importar una conversacion de Claude Code o Codex' },
   { name: 'tp', description: 'traer una conversacion de bichi work (web) con sus archivos' },
   { name: 'bichito', description: 'que pase el bichito por la barra (/bichito zzz para verlo dormir)' },
@@ -66,6 +69,7 @@ export const COMMANDS = [
   { name: 'reset', description: 'conversacion nueva', hidden: true },
   { name: 'sessions', description: 'retomar', hidden: true },
   { name: 'login', description: 'clave', hidden: true },
+  { name: 'pages', description: 'bichi paginas', hidden: true },
 ];
 
 // Sintaxis que se muestra en gris despues del comando, y opciones que se sugieren al escribir el argumento.
@@ -80,6 +84,7 @@ export const ARG_HINTS = {
   plan: '[tarea]',
   import: '[claude|codex]',
   bichito: '[zzz]',
+  paginas: '[publicar]',
   key: '[api key]',
   export: '[archivo.md]',
 };
@@ -105,6 +110,8 @@ export function argChoices(app, name) {
       ];
     case 'bichito':
       return [{ value: 'zzz', hint: 'verlo dormir' }];
+    case 'paginas':
+      return [{ value: 'publicar', hint: 'subir una carpeta con index.html a bichi.hacks.win' }];
     default:
       return [];
   }
@@ -210,6 +217,9 @@ export async function runCommand(app, name, args, raw) {
       return importChat(app, args);
     case 'tp':
       return teleport(app);
+    case 'paginas':
+    case 'pages':
+      return pagesMenu(app, args);
     case 'bichito':
       if (/^(z+|dormir|duerme|sleep)$/i.test(args)) return app.pet.sleep();
       return app.pet.walk();
@@ -397,7 +407,8 @@ async function importChat(app, args) {
   if (!file) return;
   const entry = list.find((item) => item.file === file);
   await app.run(async () => {
-    const text = transcriptOf(sourceId, file);
+    const turns = turnsOf(sourceId, file);
+    const text = transcriptText(turns);
     const progress = app.add(() => [notice(`importando "${entry.title}" (${Math.round(text.length / 1000)}k caracteres)…`, c.plum)]);
     const reduced = await reduceTranscript(app.router, text, {
       signal: app.agent.controller?.signal,
@@ -406,28 +417,148 @@ async function importChat(app, args) {
         progress.update();
       },
     });
-    app.clearConversation();
     const label = sourceId === 'claude' ? 'Claude Code' : 'Codex';
-    app.agent.messages.push(
-      { role: 'user', content: `(Conversacion importada de ${label}${reduced.summarized ? ', resumida para ahorrar contexto' : ''}. Continua desde aqui.)\n\n${reduced.text}` },
-      { role: 'assistant', content: `Listo, tengo el contexto de la conversacion de ${label}. ¿Seguimos?` },
-    );
-    app.session.title = `importada: ${entry.title}`;
-    app.replay();
+    adopt(app, { label, turns, reduced, reply: `Listo, tengo el contexto de la conversacion de ${label}. ¿Seguimos?`, title: `importada: ${entry.title}` });
     app.note(`importada de ${label}${reduced.summarized ? ` y resumida (${Math.round(text.length / 1000)}k → ${Math.round(reduced.text.length / 1000)}k caracteres)` : ''}`, c.ok);
   });
+}
+
+// Carpetas de aqui que se pueden publicar (tienen index.html), la actual primero.
+function siteFolders(cwd) {
+  const found = [];
+  const look = (dir, depth) => {
+    if (existsSync(path.join(dir, 'index.html'))) found.push(dir);
+    if (depth >= 3 || found.length >= 12) return;
+    let entries = [];
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) if (entry.isDirectory() && !entry.name.startsWith('.') && !['node_modules', 'vendor', 'venv', '__pycache__'].includes(entry.name)) look(path.join(dir, entry.name), depth + 1);
+  };
+  look(cwd, 0);
+  return found;
+}
+
+// /paginas: tus bichi paginas (bichi.hacks.win/<nombre>/). Abrir, traer aqui para editar, copiar el link,
+// quitar, o publicar una carpeta de este proyecto.
+async function pagesMenu(app, args) {
+  if (/^publica/.test(args)) return publishMenu(app);
+  let pages;
+  try {
+    pages = await listPages(app.config);
+  } catch (error) {
+    return app.print(notice(`no pude leer tus paginas: ${error.message}`, c.err));
+  }
+  const choice = await app.choose({
+    title: 'bichi paginas',
+    body: [dim(pages.length ? `${PUBLIC_BASE.replace('https://', '')}/<nombre>/ · las tuyas` : 'aun no tienes paginas publicadas')],
+    options: [
+      ...pages.map((page) => ({ label: page.slug, hint: `${ago(page.updated)} · ${page.files} archivos · ${Math.round(page.size / 1024)} KB`, value: page.slug })),
+      { label: 'publicar una carpeta de aqui', hint: 'con index.html', value: '\u0000publish' },
+    ],
+    escape: null,
+  });
+  if (!choice) return;
+  if (choice === '\u0000publish') return publishMenu(app);
+  const page = pages.find((item) => item.slug === choice);
+  const action = await app.choose({
+    title: page.url,
+    options: [
+      { label: 'abrir en el navegador', value: 'open' },
+      { label: `traerla aqui para editarla`, hint: `./${page.slug}/`, value: 'pull' },
+      { label: 'copiar el link', value: 'copy' },
+      { label: 'quitarla de internet', hint: 'se borra la pagina publicada', value: 'remove' },
+    ],
+    escape: null,
+  });
+  if (action === 'open') return (await import('./app.mjs')).openTarget(page.url);
+  if (action === 'copy') return app.print(notice((await copyText(page.url)) ? `copiado: ${page.url}` : page.url, c.ok));
+  if (action === 'pull') {
+    const target = path.join(app.cwd, page.slug);
+    const progress = app.add(() => [notice(`trayendo ${page.slug}…`, c.plum)]);
+    try {
+      const saved = await downloadPage(app.config, page.slug, target, {
+        onFile: (n, total) => {
+          progress.render = () => [notice(`trayendo ${page.slug}: ${n} de ${total} archivos…`, c.plum)];
+          progress.update();
+        },
+      });
+      progress.render = () => [notice(`${saved.length} archivos en ./${page.slug}/ · editalos y publica de nuevo con /paginas publicar`, c.ok)];
+    } catch (error) {
+      progress.render = () => [notice(`no pude traerla: ${error.message}`, c.err)];
+    }
+    progress.update();
+    return app.refreshFiles();
+  }
+  if (action === 'remove') {
+    const sure = await app.choose({ title: `quitar ${page.url}?`, body: [dim('el link deja de funcionar para todos; tu copia local, si la tienes, se queda')], options: [{ label: 'no', value: false }, { label: 'si, quitarla', value: true }], escape: false });
+    if (!sure) return;
+    try {
+      await removePage(app.config, page.slug);
+      app.print(notice(`quitada: ${page.slug}`, c.ok));
+    } catch (error) {
+      app.print(notice(`no pude quitarla: ${error.message}`, c.err));
+    }
+  }
+}
+
+async function publishMenu(app) {
+  const folders = siteFolders(app.cwd);
+  if (!folders.length) return app.print(notice('no encontre ninguna carpeta con index.html aqui. pidele a bichi que te haga la web y luego /paginas publicar', c.warn));
+  const folder =
+    folders.length === 1
+      ? folders[0]
+      : await app.choose({ title: 'que carpeta publico', options: folders.map((dir) => ({ label: path.relative(app.cwd, dir) || '. (esta carpeta)', value: dir })), escape: null });
+  if (!folder) return;
+  let files;
+  try {
+    files = siteFiles(folder);
+  } catch (error) {
+    return app.print(notice(`no se puede publicar ${path.relative(app.cwd, folder) || 'esta carpeta'}: ${error.message}`, c.warn));
+  }
+  const name = await app.field({ title: 'nombre de la pagina', initial: slugify(path.basename(folder)), hint: `quedara en ${PUBLIC_BASE.replace('https://', '')}/<nombre>/ · si ya es tuya se reemplaza` });
+  if (!name) return;
+  const progress = app.add(() => [notice(`publicando ${files.length} archivos…`, c.plum)]);
+  try {
+    const page = await publishFolder(app.config, folder, name);
+    progress.render = () => [notice(`${page.updated ? 'actualizada' : 'publicada'}: \x1b]8;;${page.url}\x07${page.url}\x1b]8;;\x07`, c.ok)];
+  } catch (error) {
+    progress.render = () => [notice(`no se pudo publicar: ${error.message}`, c.err)];
+  }
+  progress.update();
+}
+
+// Deja una conversacion traida de fuera como la actual: el modelo recibe la version reducida y en pantalla se ve
+// la original completa (session.shown), tambien al retomarla despues.
+function adopt(app, { label, turns, reduced, extra = '', reply, title }) {
+  app.clearConversation();
+  app.agent.messages.push(
+    { role: 'user', content: `(Conversacion importada de ${label}${reduced.summarized ? ', resumida para ahorrar contexto' : ''}. Continua desde aqui.)\n\n${reduced.text}${extra}` },
+    { role: 'assistant', content: reply },
+  );
+  let budget = 400_000; // lo que se guarda para mostrar; si es enorme, se queda lo ultimo
+  const shown = [];
+  for (const turn of [...turns].reverse()) {
+    budget -= turn.text.length;
+    if (budget < 0) break;
+    shown.unshift({ role: turn.role, text: turn.text, tools: turn.tools?.slice(0, 20) ?? [] });
+  }
+  app.session.shown = { from: label, summarized: reduced.summarized, cut: shown.length < turns.length, turns: shown };
+  app.session.title = title;
+  app.replay();
 }
 
 // /tp: conversaciones que mandaste desde bichi work (boton "llevar a bichi code"), con los archivos del espacio
 // si siguen en el servidor. Se reducen igual que las importadas.
 async function teleport(app) {
-  const key = providerOf(app.config, 'hacksllm')?.key;
-  if (!key) return app.print(notice('/tp necesita tu api key de hacksllm (/key)', c.warn));
-  const api = async (route, raw = false) => {
-    const response = await fetch(`${SITE}/work/${route}`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(60000) });
-    if (!response.ok) throw new Error(`${response.status} ${(await response.text()).slice(0, 160)}`);
-    return raw ? Buffer.from(await response.arrayBuffer()) : response.json();
-  };
+  let api;
+  try {
+    api = workApi(app.config);
+  } catch (error) {
+    return app.print(notice(`/tp: ${error.message}`, c.warn));
+  }
   let items;
   try {
     ({ items } = await api('tp'));
@@ -466,7 +597,7 @@ async function teleport(app) {
       for (const file of files.slice(0, 300)) {
         const destination = path.resolve(target, file.path);
         if (!destination.startsWith(path.resolve(target))) continue;
-        const data = await api(`sessions/${item.remote}/files/${file.path.split('/').map(encodeURIComponent).join('/')}`, true).catch(() => null);
+        const data = await api(`sessions/${item.remote}/files/${file.path.split('/').map(encodeURIComponent).join('/')}`, { raw: true }).catch(() => null);
         if (!data) continue;
         mkdirSync(path.dirname(destination), { recursive: true });
         writeFileSync(destination, data);
@@ -477,16 +608,11 @@ async function teleport(app) {
       progress.render = () => [notice(`${saved.length} archivos en ${path.relative(app.cwd, target) || '.'}`, c.ok)];
       progress.update();
     }
-    const text = item.messages.map((message) => `## ${message.role === 'user' ? 'usuario' : 'bichi work'}\n${message.content}`).join('\n\n');
+    const turns = item.messages.map((message) => ({ role: message.role === 'user' ? 'user' : 'assistant', text: String(message.content ?? '') }));
+    const text = turns.map((turn) => `## ${turn.role === 'user' ? 'usuario' : 'bichi work'}\n${turn.text}`).join('\n\n');
     const reduced = await reduceTranscript(app.router, text, { signal: app.agent.controller?.signal });
-    app.clearConversation();
-    const where = saved.length ? `\n\nLos archivos de esa sesion estan ahora en ${path.relative(app.cwd, target) || 'esta carpeta'}: ${saved.slice(0, 60).join(', ')}${saved.length > 60 ? '…' : ''}` : '';
-    app.agent.messages.push(
-      { role: 'user', content: `(Conversacion importada de bichi work${reduced.summarized ? ', resumida para ahorrar contexto' : ''}. Continua desde aqui, ahora en la computadora del usuario.)\n\n${reduced.text}${where}` },
-      { role: 'assistant', content: `Listo, traje la conversacion de bichi work${saved.length ? ` y ${saved.length} archivos` : ''}. ¿Seguimos?` },
-    );
-    app.session.title = `work: ${item.title}`;
-    app.replay();
+    const where = saved.length ? `\n\nAhora estas en la computadora del usuario. Los archivos de esa sesion estan en ${path.relative(app.cwd, target) || 'esta carpeta'}: ${saved.slice(0, 60).join(', ')}${saved.length > 60 ? '…' : ''}` : '\n\nAhora estas en la computadora del usuario.';
+    adopt(app, { label: 'bichi work', turns, reduced, extra: where, reply: `Listo, traje la conversacion de bichi work${saved.length ? ` y ${saved.length} archivos` : ''}. ¿Seguimos?`, title: `work: ${item.title}` });
     app.note(`traida de bichi work${saved.length ? ` con ${saved.length} archivos` : ''}`, c.ok);
   });
 }

@@ -115,9 +115,12 @@ export function listImports(sourceId, cwd) {
     .slice(0, 30);
 }
 
-export function transcriptOf(sourceId, file) {
-  const parsed = sourceId === 'claude' ? parseClaude(file) : parseCodex(file);
-  return parsed.turns
+// Turnos de una conversacion: {role, text, tools}.
+export const turnsOf = (sourceId, file) => (sourceId === 'claude' ? parseClaude(file) : parseCodex(file)).turns;
+
+// Los turnos como texto para el modelo (es lo que se reduce).
+export function transcriptText(turns) {
+  return turns
     .map((turn) => {
       const tools = turn.tools.length ? `\n[herramientas: ${turn.tools.slice(0, 12).join(' · ')}${turn.tools.length > 12 ? ` y ${turn.tools.length - 12} mas` : ''}]` : '';
       return `## ${turn.role === 'user' ? 'usuario' : 'asistente'}\n${turn.text}${tools}`.trim();

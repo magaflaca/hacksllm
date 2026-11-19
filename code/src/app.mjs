@@ -294,10 +294,14 @@ export class App {
     this.header();
     const results = new Map(this.agent.messages.filter((message) => message.role === 'tool').map((message) => [message.tool_call_id, message.content]));
     const tools = this.agent.tools();
+    const shown = this.session.shown;
+    if (shown) this.replayShown(shown);
     for (const [index, message] of this.agent.messages.entries()) {
       if (message.role === 'user' && typeof message.content === 'string') {
         const text = stripAttachments(message.content);
-        if (/^\((Esta conversacion se resumio|Se recorto|Conversacion importada)/.test(text)) this.add(() => [notice('conversacion anterior resumida', c.plum)]);
+        if (shown && text.startsWith('(Conversacion importada'))
+          this.add(() => [notice(`hasta aqui, la conversacion de ${shown.from}${shown.summarized ? ' · bichi la lee resumida para ahorrar contexto' : ''}`, c.plum)]);
+        else if (/^\((Esta conversacion se resumio|Se recorto|Conversacion importada)/.test(text)) this.add(() => [notice('conversacion anterior resumida', c.plum)]);
         else this.addUser(text.replace(/^\((mensaje del usuario|sigue con el objetivo|nota)[^)]*\)\n?/, ''));
       } else if (message.role === 'assistant') {
         if (message.content && message.content !== 'Entendido, sigo desde aqui.') {
@@ -322,6 +326,21 @@ export class App {
     }
     this.follow = true;
     this.render();
+  }
+
+  // La conversacion original de algo traido de fuera (/tp, /import), tal como se vio alli. Solo es para leer:
+  // el modelo trabaja con la version reducida.
+  replayShown(shown) {
+    if (shown.cut) this.add(() => [notice(`conversacion de ${shown.from} · los mensajes mas viejos no se guardaron`, c.plum)]);
+    for (const turn of shown.turns) {
+      if (turn.role === 'user') {
+        this.addUser(turn.text);
+        continue;
+      }
+      const tools = turn.tools ?? [];
+      if (turn.text) this.add((w) => assistantLines(turn.text, w));
+      if (tools.length) this.add((w) => tools.map((tool, i) => `  ${c.soft(i ? ' ' : '╰')}  ${dim(truncate(tool, w - 8))}`), { gap: turn.text ? 0 : 1 });
+    }
   }
 
   // Herramienta de una conversacion retomada: plegada como siempre y con clic se abre. Las ediciones reconstruyen
@@ -1402,7 +1421,7 @@ function safe(fn) {
 
 const clock = (seconds) => (seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`);
 
-function openTarget(url) {
+export function openTarget(url) {
   const target = url.startsWith('file:') ? decodeURIComponent(url.replace(/^file:\/\/\/?/, process.platform === 'win32' ? '' : '/')) : url;
   const [command, args] = process.platform === 'win32' ? ['cmd', ['/c', 'start', '""', target]] : process.platform === 'darwin' ? ['open', [target]] : ['xdg-open', [target]];
   spawn(command, args, { detached: true, stdio: 'ignore', windowsHide: true }).unref();

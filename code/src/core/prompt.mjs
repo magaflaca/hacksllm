@@ -35,6 +35,7 @@ export function systemPrompt({ cwd, effort = 'medium', mode = 'normal', sub = nu
 - Puedes llamar varias herramientas independientes en la misma respuesta (leer varios archivos, varias busquedas) y se ejecutan en paralelo.
 - Para trabajos de varios pasos lleva una lista con todo_write y ve marcando lo que terminas. Para investigaciones amplias o tareas separables usa task (subagentes en paralelo).
 - Si algo es ambiguo de verdad y la decision es del usuario, pregunta con ask_user; si no, decide con sentido comun y cuentalo.
+- Bichi paginas: puedes publicar webs estaticas del usuario en https://bichi.hacks.win/<nombre>/ con page_publish (carpeta con index.html), ver las suyas con pages_list y traer una para editarla con page_download. Publica solo cuando el usuario lo pida y dale el link al terminar.
 - Se honesto: si algo fallo o no lo pudiste probar, dilo. No inventes salidas de comandos ni contenido de archivos que no leiste.`,
 
     `# Como respondes

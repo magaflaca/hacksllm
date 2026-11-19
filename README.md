@@ -133,7 +133,11 @@ El instalador deja `bichi` en `~/.bichi/bin` (en el PATH) y, si no hay Node 20+,
   archivos sugeridos encima de la entrada, imagenes (alt+v o pegar una ruta; un modelo con vision las describe),
   esc esc para rebobinar conversacion y codigo, `/goal` para trabajar solo hasta cumplir algo, `/context`.
 - **Traer conversaciones**: `/import` de Claude Code o Codex y `/tp` de bichi work (boton "llevar a bichi code",
-  guardado en `/opt/hacksllm/data/transport` por clave). Las grandes se resumen por partes con los modelos gratis.
+  guardado en `/opt/hacksllm/data/transport` por clave). Las grandes se resumen por partes con los modelos gratis;
+  en pantalla se ve la conversacion original completa.
+- **Bichi paginas**: `/paginas` lista, abre, trae para editar o quita tus webs de bichi.hacks.win, y
+  `/paginas publicar` sube una carpeta con index.html (zip contra `/work/pages/<nombre>`). El agente tiene
+  `pages_list`, `page_publish` y `page_download`.
 - **Contexto**: los resultados viejos de herramientas van recortados y al 75% la conversacion se resume sola
   (si resumir falla, recorta lo mas viejo).
 - **Carpeta .bichi**: memoria `.bichi/BICHI.md`, ajustes, agentes, comandos y skills del proyecto (tambien lee
