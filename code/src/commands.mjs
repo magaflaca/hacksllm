@@ -33,7 +33,7 @@ export const COMMANDS = [
   { name: 'help', description: 'comandos y atajos' },
   { name: 'model', description: 'elegir modelo (o auto)' },
   { name: 'effort', description: 'esfuerzo: bajo, medio o alto' },
-  { name: 'agy', description: 'modo agy: Antigravity (Gemini 3.8 Flash) trabajando en tu PC; otra vez para volver' },
+  { name: 'agy', description: 'modo agy: el mas capaz, ideal para proyectos grandes; otra vez para volver' },
   { name: 'mode', description: 'modo: normal, acepta ediciones, plan, sin preguntas' },
   { name: 'plan', description: 'entrar o salir del modo plan' },
   { name: 'config', description: 'ajustes, proveedores y claves' },

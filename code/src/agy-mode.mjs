@@ -15,7 +15,7 @@ import { saveConfig } from './config.mjs';
 import { notice } from './ui/blocks.mjs';
 import { c } from './ui/term.mjs';
 
-export const AGY_HINT = 'Antigravity · Gemini 3.8 Flash';
+export const AGY_HINT = 'el mas capaz, ideal para proyectos grandes';
 
 // Entrar o salir del modo agy. Al salir se vuelve a auto (los modelos de siempre siguen con la misma conversacion).
 export function setAgy(app, on) {
