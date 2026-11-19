@@ -8,6 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 import { ENGINES, available, rest, runEngine } from './engines.mjs';
 import * as sessions from './sessions.mjs';
+import { authorizer } from './auth.mjs';
 import * as pages from './pages.mjs';
 import * as transport from './transport.mjs';
 
@@ -40,17 +41,7 @@ a escribir el mismo nombre.`;
 
 // ---- auth
 
-const validKeys = new Map();
-async function authorize(req) {
-  const key = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '').trim();
-  if (!key) return null;
-  const owner = sessions.ownerOf(key);
-  if ((validKeys.get(owner) ?? 0) > Date.now()) return owner;
-  const response = await fetch(`${GATEWAY}/v1/models`, { headers: { authorization: `Bearer ${key}` } }).catch(() => null);
-  if (!response?.ok) return null;
-  validKeys.set(owner, Date.now() + 10 * 60_000);
-  return owner;
-}
+const authorize = authorizer(GATEWAY);
 
 // ---- cola
 

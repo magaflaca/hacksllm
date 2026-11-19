@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
 const RUNNER = ['sudo', '-n', '/usr/local/bin/bichi-run'];
-const QUOTA = /quota|exhaust|rate.?limit|429|resource_exhausted|capacity|too many/i;
+export const QUOTA = /quota|exhaust|rate.?limit|429|resource_exhausted|capacity|too many/i;
 
 const AGY_KINDS = [
   [/browser|url|web/, 'web'],
@@ -20,7 +20,7 @@ const OPENCODE_KINDS = { write: 'write', edit: 'edit', patch: 'edit', multiedit:
 const kindOf = (name) => AGY_KINDS.find(([pattern]) => pattern.test(name))?.[1] ?? 'other';
 const labelOf = (input = {}) => input.CommandLine ?? input.command ?? input.Path ?? input.filePath ?? input.AbsolutePath ?? input.path ?? input.Url ?? input.url ?? input.pattern ?? input.Query ?? '';
 
-function* parseAgy(event) {
+export function* parseAgy(event) {
   if (event.event === 'init') return yield { type: 'resume', id: event.conversation_id };
   if (event.event === 'result') {
     const { status, response } = event.result;

@@ -1,0 +1,21 @@
+[Unit]
+Description=bichi agy: Antigravity trabajando en la PC del usuario de bichi code
+After=network-online.target hacksllm.service
+
+[Service]
+Type=simple
+User=hacksllm
+Group=hacksllm
+WorkingDirectory=/opt/hacksllm/work
+ExecStart=/opt/hacksllm/runtime/bin/node agy.mjs
+EnvironmentFile=/opt/hacksllm/env
+EnvironmentFile=-/opt/hacksllm/agy.env
+Environment=NODE_ENV=production
+Environment=AGY_PORT=20140
+Environment=AGY_CONCURRENCY=2
+Restart=always
+RestartSec=3
+MemoryMax=600M
+
+[Install]
+WantedBy=multi-user.target

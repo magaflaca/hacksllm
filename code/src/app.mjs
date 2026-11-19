@@ -12,6 +12,8 @@ import { listSessions, loadSession, newSessionId, saveSession } from './core/ses
 import { listSkills } from './core/skills.mjs';
 import { displayName } from './providers.mjs';
 import { ARG_HINTS, argChoices, COMMANDS, runCommand } from './commands.mjs';
+import { runAgy } from './agy-mode.mjs';
+import { isAgy } from './core/agy.mjs';
 import { listFiles } from './tools/files.mjs';
 import { backgroundJobs, killAll, shell as shellTool, stopJob } from './tools/shell.mjs';
 import { beetle, logo } from './ui/art.mjs';
@@ -408,6 +410,7 @@ export class App {
   }
 
   modelLabel() {
+    if (isAgy(this.config.model)) return 'bichi-agy';
     const entry = this.router.current ?? this.router.candidates().awake[0] ?? this.router.candidates().list[0];
     if (this.config.model === 'auto') return entry ? `auto · ${displayName(this.config, entry)}` : 'auto';
     return entry ? displayName(this.config, entry) : this.config.model;
@@ -1116,10 +1119,21 @@ export class App {
         item.update();
         content += `\n\n${tag} (${image.name}, guardada en ${image.file}):\n${description}`;
       }
-      await this.agent.send(content);
+      await (isAgy(this.config.model) ? this.agyTurns(content) : this.agent.send(content));
     });
     this.unsent = null;
     await this.pursueGoal();
+  }
+
+  // Modo agy: un turno de Antigravity y, si escribiste mientras trabajaba, otro con eso (agy no lee a mitad de turno).
+  async agyTurns(content) {
+    await runAgy(this, content);
+    while (this.agent.queue.length && !this.running?.interrupted) {
+      const text = this.agent.queue.splice(0).join('\n\n');
+      this.agentUi().onSteer(text);
+      this.unsent = null;
+      await runAgy(this, text);
+    }
   }
 
   // /goal: mientras el objetivo no este cumplido, bichi sigue trabajando solo (con un tope de rondas).
@@ -1459,6 +1473,8 @@ export class App {
     }
     const text = stripAttachments(this.agent.messages[index].content);
     const files = await this.agent.rewind(index, { code });
+    // agy no puede rebobinar su propia conversacion: la siguiente empieza otra, con lo que quedo como contexto.
+    delete this.session.agy;
     for (const key of Object.keys(this.session.stamps ?? {})) if (Number(key) >= index) delete this.session.stamps[key];
     this.replay();
     this.editor.set(text);

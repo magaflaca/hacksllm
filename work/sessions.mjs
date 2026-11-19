@@ -1,6 +1,6 @@
 // Sesiones de bichi work: una por visita a la web, ligada al hash de la clave que la creo. El espacio de
 // trabajo vive en /srv/hacksllm-work/ws/<id> (lo crea y borra bichi-run como root) y los metadatos aqui.
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, writeFile, rm, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { runner } from './engines.mjs';
@@ -14,7 +14,7 @@ const MAX_LISTED = 400;
 
 await mkdir(META, { recursive: true });
 
-export const ownerOf = (key) => createHash('sha256').update(key).digest('hex').slice(0, 24);
+export { ownerOf } from './auth.mjs';
 const metaFile = (id) => path.join(META, `${id}.json`);
 export const workspace = (id) => path.join(WORKSPACES, id);
 

@@ -1,0 +1,45 @@
+#!/bin/bash
+# Unico punto con root de bichi agy (lo llama el servicio por sudo). agy corre como hacksllm-agy en un sandbox de
+# systemd que solo ve: su HOME, el disco del turno (la carpeta del proyecto en la PC, montada en /pc/<carpeta>) y el
+# enchufe hacia bichi code (/srv/hacksllm-agy/io). Nada de bichi work, /opt, /root ni los turnos de otros.
+#   bichi-agy-run run <turno> <modelo> <reanudar|-> <auto|plan> <carpeta> < prompt
+#   bichi-agy-run stop <turno>
+set -uo pipefail
+
+ROOT=/srv/hacksllm-agy
+cmd=${1:-} id=${2:-}
+[[ $id =~ ^[a-f0-9]{24}$ ]] || { echo "turno invalido" >&2; exit 2; }
+unit=bichi-agy-$id
+
+case $cmd in
+  stop) systemctl stop "$unit" 2>/dev/null; exit 0 ;;
+  run) ;;
+  *) echo "orden invalida" >&2; exit 2 ;;
+esac
+
+model=${3:-} resume=${4:--} mode=${5:-auto} folder=${6:-proyecto}
+[[ $model =~ ^[a-z0-9.-]{3,60}$ && $resume =~ ^[A-Za-z0-9_-]{1,80}$ && $mode =~ ^(auto|plan)$ && $folder =~ ^[A-Za-z0-9._-]{1,60}$ ]] ||
+  { echo "argumentos invalidos" >&2; exit 2; }
+[[ $folder != . && $folder != .. ]] || { echo "carpeta invalida" >&2; exit 2; }
+dir=$ROOT/t/$id
+[ -S "$dir/io/link.sock" ] && mountpoint -q "$dir/mnt" || { echo "el turno no tiene disco" >&2; exit 2; }
+prompt=$(head -c 200000)
+
+run=("$ROOT/.local/bin/agy" -p "$prompt" --model "$model" --dangerously-skip-permissions --output-format stream-json)
+[ "$resume" = - ] || run+=(--conversation "$resume")
+[ "$mode" = plan ] && run+=(--mode plan)
+
+exec systemd-run --quiet --pipe --wait --collect --unit="$unit" \
+  --uid=hacksllm-agy --gid=hacksllm-agy \
+  -p WorkingDirectory="/pc/$folder" -p UMask=0022 \
+  -p Environment=HOME="$ROOT/home" -p Environment=SHELL="$ROOT/bin/bash" -p Environment=BICHI_PC="/pc/$folder" \
+  -p Environment=PATH="$ROOT/bin:/usr/local/bin:/usr/bin:/bin" \
+  -p MemoryMax=1500M -p MemorySwapMax=512M -p CPUQuota=200% -p TasksMax=256 -p RuntimeMaxSec=1500 \
+  -p ProtectSystem=strict -p ProtectHome=yes -p PrivateTmp=yes -p PrivateDevices=yes -p ProtectProc=invisible \
+  -p NoNewPrivileges=yes -p RestrictSUIDSGID=yes \
+  -p ProtectKernelTunables=yes -p ProtectKernelModules=yes -p ProtectControlGroups=yes \
+  -p ReadWritePaths="$ROOT/home" \
+  -p TemporaryFileSystem="$ROOT/t" -p TemporaryFileSystem=/pc \
+  -p BindPaths="$dir/io:$ROOT/io $dir/mnt:/pc/$folder" \
+  -p InaccessiblePaths="-/opt -/root -/var/lib -/var/log -/etc/nginx -/etc/letsencrypt -/run/screen -/srv/hacksllm-work -/home" \
+  "${run[@]}" </dev/null

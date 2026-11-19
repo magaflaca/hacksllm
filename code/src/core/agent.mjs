@@ -273,29 +273,8 @@ export class Agent {
     if (input.__raw !== undefined) return `error: los argumentos no son JSON valido: ${input.__raw.slice(0, 200)}`;
     const ctx = this.context(signal, call);
     const view = { id: call.id, tool, input, label: safeLabel(tool, input, ctx), sub: this.sub?.label ?? null };
-
-    const pre = await runHooks(this.settings, 'pre_tool', { tool: tool.name, input }, this.cwd);
-    if (pre.blocked) {
-      this.ui.onToolDenied?.(view, pre.blocked);
-      return `bloqueado por un hook: ${pre.blocked}`;
-    }
-
-    const { verdict, reason } = decide({ tool, input, mode: this.getMode(), settings: this.settings, session: this.sessionRules });
-    if (verdict === 'deny') {
-      this.ui.onToolDenied?.(view, reason);
-      return `no permitido: ${reason}`;
-    }
-    if (verdict === 'ask') {
-      if (!this.ui.permission) return 'no permitido: no hay nadie para aprobarlo (usa --yolo o el modo edits)';
-      const preview = tool.preview ? await tool.preview(input, ctx).catch(() => null) : null;
-      const answer = await this.ui.permission(view, preview, ruleFor(tool, input));
-      if (answer.choice === 'always') this.sessionRules.add(ruleFor(tool, input));
-      if (answer.choice === 'project') this.ui.allowProject?.(ruleFor(tool, input));
-      if (answer.choice === 'no') {
-        this.ui.onToolDenied?.(view, answer.feedback ? `no: ${answer.feedback}` : 'el usuario dijo que no');
-        return answer.feedback ? `el usuario rechazo esta accion y dice: ${answer.feedback}` : 'el usuario rechazo esta accion. pregunta que prefiere o sigue por otro camino.';
-      }
-    }
+    const refusal = await this.permit(tool, input, view, ctx);
+    if (refusal) return refusal;
 
     this.ui.onToolStart?.(view);
     const started = Date.now();
@@ -312,6 +291,30 @@ export class Agent {
       this.ui.onToolEnd?.(view, { error: error.message, ms: Date.now() - started });
       return `error: ${error.message}`;
     }
+  }
+
+  // Hooks y permisos de una accion (herramientas del modelo y lo que pide agy en su modo). Devuelve null si se puede
+  // hacer, o el motivo para el modelo si no.
+  async permit(tool, input, view, ctx) {
+    const pre = await runHooks(this.settings, 'pre_tool', { tool: tool.name, input }, this.cwd);
+    if (pre.blocked) {
+      this.ui.onToolDenied?.(view, pre.blocked);
+      return `bloqueado por un hook: ${pre.blocked}`;
+    }
+    const { verdict, reason } = decide({ tool, input, mode: this.getMode(), settings: this.settings, session: this.sessionRules });
+    if (verdict === 'deny') {
+      this.ui.onToolDenied?.(view, reason);
+      return `no permitido: ${reason}`;
+    }
+    if (verdict !== 'ask') return null;
+    if (!this.ui.permission) return 'no permitido: no hay nadie para aprobarlo (usa --yolo o el modo edits)';
+    const preview = tool.preview ? await tool.preview(input, ctx).catch(() => null) : null;
+    const answer = await this.ui.permission(view, preview, ruleFor(tool, input));
+    if (answer.choice === 'always') this.sessionRules.add(ruleFor(tool, input));
+    if (answer.choice === 'project') this.ui.allowProject?.(ruleFor(tool, input));
+    if (answer.choice !== 'no') return null;
+    this.ui.onToolDenied?.(view, answer.feedback ? `no: ${answer.feedback}` : 'el usuario dijo que no');
+    return answer.feedback ? `el usuario rechazo esta accion y dice: ${answer.feedback}` : 'el usuario rechazo esta accion. pregunta que prefiere o sigue por otro camino.';
   }
 
   context(signal, call) {

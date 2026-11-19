@@ -7,6 +7,8 @@ import { MODE_INFO, MODES } from './core/permissions.mjs';
 import { importSources, listImports, reduceTranscript, transcriptText, turnsOf } from './core/importer.mjs';
 import { downloadPage, listPages, PUBLIC_BASE, publishFolder, removePage, siteFiles, slugify } from './core/pages.mjs';
 import { workApi } from './core/work.mjs';
+import { isAgy } from './core/agy.mjs';
+import { AGY_HINT, setAgy } from './agy-mode.mjs';
 import { expandCommand, loadAgents, loadCommands, loadMemory, memoryFiles } from './core/project.mjs';
 import { ago, listSessions, loadSession } from './core/sessions.mjs';
 import { findSkill, listSkills, skillText } from './core/skills.mjs';
@@ -31,6 +33,7 @@ export const COMMANDS = [
   { name: 'help', description: 'comandos y atajos' },
   { name: 'model', description: 'elegir modelo (o auto)' },
   { name: 'effort', description: 'esfuerzo: bajo, medio o alto' },
+  { name: 'agy', description: 'modo agy: Antigravity (Gemini 3.8 Flash) trabajando en tu PC; otra vez para volver' },
   { name: 'mode', description: 'modo: normal, acepta ediciones, plan, sin preguntas' },
   { name: 'plan', description: 'entrar o salir del modo plan' },
   { name: 'config', description: 'ajustes, proveedores y claves' },
@@ -92,7 +95,11 @@ export const ARG_HINTS = {
 export function argChoices(app, name) {
   switch (name) {
     case 'model':
-      return [{ value: 'auto', hint: 'el mejor disponible, cambia solo si se agota' }, ...catalog(app.config).map((entry) => ({ value: entry.alias, hint: entry.note }))];
+      return [
+        { value: 'auto', hint: 'el mejor disponible, cambia solo si se agota' },
+        { value: 'bichi-agy', hint: AGY_HINT },
+        ...catalog(app.config).map((entry) => ({ value: entry.alias, hint: entry.note })),
+      ];
     case 'effort':
       return [
         { value: 'bajo', hint: 'rapido y directo' },
@@ -141,7 +148,10 @@ export async function runCommand(app, name, args, raw) {
     case 'help':
       print(['', bold(c.brand('  comandos')), table(COMMANDS.filter((command) => !command.hidden).map((command) => [`/${command.name}`, command.description])), '', bold(c.brand('  atajos'))].join('\n'));
       return print((await import('./app.mjs')).shortcutsHelp());
+    case 'agy':
+      return setAgy(app, !isAgy(app.config.model));
     case 'model':
+      if (isAgy(args)) return setAgy(app, true);
       if (args) {
         const entry = catalog(app.config).find((item) => [item.alias, item.id, item.key].includes(args));
         if (args === 'auto' || entry) {

@@ -84,6 +84,33 @@ web (#/work) -> Pages /work/* -> nginx /work/ -> hacksllm-work :20130 (usuario h
 - El agente necesita la sesion de Google de agy, asi que quien tenga una clave podria leerla desde su espacio:
   reparte claves solo a gente de confianza.
 
+### bichi agy
+
+Modo de bichi code (`/agy`, `/model agy` o `/model bichi-agy`) en el que trabaja Antigravity con Gemini 3.8 Flash
+(bajo, medio o alto segun `/effort`) y `gpt-oss-120b-medium` de respaldo. agy corre en el VPS, pero su carpeta de
+trabajo y su terminal son la PC del usuario:
+
+```
+bichi code (PC) <-> Pages /agy/* -> nginx /agy/ -> hacksllm-agy :20140 (usuario hacksllm)
+                                                     |  disco FUSE del turno (agy-fs.py) + enchufe unix
+                                                     |  sudo bichi-agy-run (unico paso con root)
+                                                     v
+                              systemd-run como hacksllm-agy: /pc/<carpeta> = el disco, bash = agy-shim.py
+```
+
+- El disco guarda en cache el arbol del proyecto (lo manda bichi al empezar) y lo leido; solo viaja a la PC lo que
+  agy lee de verdad, lo que escribe (al cerrar el archivo) y los comandos. La bash falsa ejecuta en la PC y despues
+  bichi manda el arbol de nuevo.
+- En la PC las escrituras, los borrados y los comandos pasan por los permisos de bichi (con diff) y por `/undo`.
+  En modo plan agy va con `--mode plan` y no se escribe ni se ejecuta nada.
+- Limites: archivos de mas de 25 MB no se leen por el disco, 20.000 entradas de arbol (las carpetas pesadas como
+  node_modules o bin se listan solo si agy entra), 400 MB por turno entre PC y VPS, 25 min por turno, 2 turnos a la
+  vez en el VPS y uno por clave. No trabaja en la raiz del disco, la carpeta de usuario ni carpetas del sistema.
+- agy retoma su propia conversacion en cada turno (los ids van en la sesion de bichi); al rebobinar o cambiar de
+  modelo empieza otra con la conversacion de bichi como contexto.
+- `deploy/setup-agy.sh` lo instala sin tocar bichi work (usuario, sesion de agy, venv con mfusepy, sudoers,
+  servicio y la ruta en nginx).
+
 ### bichi paginas
 
 Webs estaticas en `https://bichi.hacks.win/<nombre>` que no caducan: viven hasta que su dueno (la clave que las
@@ -135,6 +162,8 @@ El instalador deja `bichi` en `~/.bichi/bin` (en el PATH) y, si no hay Node 20+,
 - **Traer conversaciones**: `/import` de Claude Code o Codex y `/tp` de bichi work (boton "llevar a bichi code",
   guardado en `/opt/hacksllm/data/transport` por clave). Las grandes se resumen por partes con los modelos gratis;
   en pantalla se ve la conversacion original completa.
+- **Modo agy**: `/agy` pone a Antigravity (Gemini 3.8 Flash) a trabajar en tu carpeta desde el VPS, con tus
+  permisos y tu `/undo` (ver bichi agy arriba).
 - **Bichi paginas**: `/paginas` lista, abre, trae para editar o quita tus webs de bichi.hacks.win, y
   `/paginas publicar` sube una carpeta con index.html (zip contra `/work/pages/<nombre>`). El agente tiene
   `pages_list`, `page_publish` y `page_download`.
