@@ -460,6 +460,7 @@ export class App {
         lines.push(rule);
       }
       const input = this.inputLines(W);
+      this.clickRows.input = { row: lines.length, count: input.lines.length, shift: input.shift ?? 0, inner: W - 4 };
       cursor = { row: lines.length + input.cursor.row, col: input.cursor.col };
       lines.push(...input.lines);
       lines.push(rule);
@@ -490,7 +491,7 @@ export class App {
     // Sintaxis del comando en gris mientras falta el argumento: "/model [modelo]".
     const command = /^\/([\w-]+) ?$/.exec(text);
     if (command && ARG_HINTS[command[1]] && lines.length === 1) lines[0] += `${text.endsWith(' ') ? '' : ' '}${dim(ARG_HINTS[command[1]])}`;
-    return { lines, cursor: { row: cursor.row - shift, col: 2 + cursor.col } };
+    return { lines, shift, cursor: { row: cursor.row - shift, col: 2 + cursor.col } };
   }
 
   footer(W) {
@@ -725,6 +726,13 @@ export class App {
     const shells = this.clickRows?.shells;
     if (shells && row === this.clickRows.footer && col >= shells.from && col < shells.to) return this.jobsMenu();
     if (this.overlay?.click && this.clickRows.overlay !== undefined) return this.overlay.click(row - this.clickRows.overlay);
+    // Clic en la entrada: el cursor va ahi.
+    const input = this.clickRows?.input;
+    if (input && !this.overlay && row >= input.row && row < input.row + input.count && this.editor.text) {
+      this.editor.cursor = this.editor.positionAt(input.inner, row - input.row + input.shift, Math.max(0, col - 2));
+      this.updateSuggestions();
+      return this.render();
+    }
     const list = this.suggestions;
     if (list && this.clickRows.suggestions !== undefined) {
       const index = this.suggestionMap?.[row - this.clickRows.suggestions];

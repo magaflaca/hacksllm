@@ -191,6 +191,35 @@ export class Editor {
     return { rows, cursor };
   }
 
+  // Indice del texto en la fila/columna visible de layout(inner) (para poner el cursor con un clic).
+  // Se queda en el caracter cuya mitad izquierda se toco; mas alla del final de la fila, al final de la fila.
+  positionAt(inner, targetRow, targetCol) {
+    let row = 0;
+    let offset = 0;
+    let best = null;
+    for (const line of this.text.split('\n')) {
+      let used = 0;
+      let index = offset;
+      for (const char of line) {
+        const w = charWidth(char.codePointAt(0));
+        if (used + w > inner) {
+          if (row === targetRow) return index;
+          row++;
+          used = 0;
+        }
+        if (row === targetRow && targetCol < used + Math.ceil(w / 2)) return index;
+        used += w;
+        index += char.length;
+      }
+      if (row === targetRow) return index;
+      if (used >= inner && index === this.cursor) row++; // igual que layout: fila extra solo con el cursor ahi
+      best = index;
+      row++;
+      offset = index + 1;
+    }
+    return best ?? this.text.length;
+  }
+
   // Palabra que se esta escribiendo (para completar /comandos y @archivos).
   token() {
     const before = this.text.slice(0, this.cursor);
