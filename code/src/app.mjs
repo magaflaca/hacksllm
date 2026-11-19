@@ -1138,6 +1138,8 @@ export class App {
     this.addUser(display);
     const ended = await this.run(async () => {
       let content = this.withContext(text);
+      // agy (Gemini) ve las imagenes el mismo: van tal cual con el mensaje, sin describirlas antes.
+      if (isAgy(this.config.model)) return this.agyTurns(content, images.map(([tag, image]) => ({ tag, name: image.name === 'portapapeles' ? path.basename(image.file) : image.name, data: readFileSync(image.file).toString('base64') })));
       for (const [tag, image] of images) {
         const item = this.add(() => [notice(`mirando ${tag}…`, c.plum)], { gap: 0 });
         const description = await describe(this.router, image);
@@ -1145,7 +1147,7 @@ export class App {
         item.update();
         content += `\n\n${tag} (${image.name}, guardada en ${image.file}):\n${description}`;
       }
-      await (isAgy(this.config.model) ? this.agyTurns(content) : this.agent.send(content));
+      await this.agent.send(content);
     });
     this.unsent = null;
     if (await this.leftovers(ended)) return;
@@ -1169,8 +1171,8 @@ export class App {
 
   // Modo agy: un turno de Antigravity y, si escribiste mientras trabajaba, otro con eso (agy no lee a mitad de turno).
   // El mensaje en cola se mueve abajo del todo, despues de la respuesta del turno que acaba de terminar.
-  async agyTurns(content) {
-    await runAgy(this, content);
+  async agyTurns(content, images = []) {
+    await runAgy(this, content, images);
     while (this.agent.queue.length && !this.running?.interrupted) {
       const text = this.agent.queue.splice(0).join('\n\n');
       for (const item of this.pendingSteer.splice(0)) item.remove();

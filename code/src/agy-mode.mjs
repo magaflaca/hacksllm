@@ -90,7 +90,8 @@ const transcript = (messages) =>
     .join('\n\n')
     .slice(-CONTEXT);
 
-export async function runAgy(app, content) {
+// images: [{ tag, name, data(base64) }] que agy mira el mismo.
+export async function runAgy(app, content, images = []) {
   // Sin carpeta y sin crear una: el mensaje vuelve a la entrada como si se hubiera cancelado.
   if (!(await ensureProject(app))) throw Object.assign(new Error('cancelado'), { name: 'AbortError' });
   const { agent } = app;
@@ -233,6 +234,7 @@ export async function runAgy(app, content) {
       config: app.config,
       cwd: app.cwd,
       message: content,
+      images,
       context,
       effort: app.config.effort,
       mode: app.mode === 'plan' ? 'plan' : 'auto',

@@ -11,7 +11,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { chmod, mkdir, readdir, readFile, rm } from 'node:fs/promises';
+import { chmod, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { authorizer } from './auth.mjs';
 import { parseAgy, QUOTA } from './engines.mjs';
@@ -41,8 +41,11 @@ const LIMITS = {
   turn: 25 * 60_000, // duracion maxima de un turno
   silence: 30_000, // sin noticias de bichi code (ni respuestas ni latidos) en este tiempo, el turno se corta
   reply: 64 << 20, // cuerpo de /agy/reply
-  start: 8 << 20, // cuerpo de /agy/turn (el arbol va dentro)
+  start: 40 << 20, // cuerpo de /agy/turn (el arbol y las imagenes van dentro)
+  images: 6, // imagenes por mensaje
+  image: 8 << 20, // bytes de cada una
 };
+const IMAGE_TYPES = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']);
 const MODELS = [
   { key: 'flash', model: (effort) => `gemini-3.8-flash-${effort}` },
   { key: 'oss', model: () => 'gpt-oss-120b-medium' },
@@ -381,6 +384,26 @@ class Turn {
     throw new Error(`no se pudo montar el disco: ${errors.slice(-300)}`);
   }
 
+  // Las imagenes del mensaje se dejan junto al enchufe (agy las ve en $ROOT/io/img) para que las mire el mismo.
+  // Devuelve las lineas que se le añaden al mensaje: "[Imagen #1] -> /srv/hacksllm-agy/io/img/1.png".
+  async images() {
+    const list = Array.isArray(this.body.images) ? this.body.images.slice(0, LIMITS.images) : [];
+    if (!list.length) return [];
+    const dir = path.join(this.dir, 'io', 'img');
+    await mkdir(dir, { recursive: true });
+    await chmod(dir, 0o755);
+    const lines = [];
+    for (const [index, image] of list.entries()) {
+      const ext = path.extname(String(image?.name ?? '')).toLowerCase();
+      const data = Buffer.from(String(image?.data ?? ''), 'base64');
+      if (!data.length || data.length > LIMITS.image) continue;
+      const name = `${index + 1}${IMAGE_TYPES.has(ext) ? ext : '.png'}`;
+      await writeFile(path.join(dir, name), data, { mode: 0o644 });
+      lines.push(`${String(image.tag ?? `[Imagen #${index + 1}]`).slice(0, 40)} -> ${ROOT}/io/img/${name}`);
+    }
+    return lines;
+  }
+
   async cleanup() {
     this.closed = true;
     for (const { resolve, timer } of this.pending.values()) (clearTimeout(timer), resolve({ errno: E.IO }));
@@ -462,7 +485,8 @@ async function runTurn(turn) {
   const effort = EFFORTS.has(body.effort) ? body.effort : 'medium';
   const mode = body.mode === 'plan' ? 'plan' : 'auto';
   const folder = FOLDER.test(body.folder ?? '') ? body.folder : 'proyecto';
-  const message = String(body.message ?? '').slice(0, LIMITS.prompt);
+  const pictures = await turn.images();
+  const message = String(body.message ?? '').slice(0, LIMITS.prompt) + (pictures.length ? `\n\n[bichi] Imagenes que adjunto el usuario (miralas con tu herramienta para ver archivos antes de responder):\n${pictures.join('\n')}` : '');
   const resumes = typeof body.resume === 'object' && body.resume ? body.resume : {};
   const order = MODELS.filter((entry) => !resting(entry.key));
   if (!order.length) order.push(...MODELS);

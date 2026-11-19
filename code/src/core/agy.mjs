@@ -184,13 +184,13 @@ export async function runAgyTurn(options) {
   }
 }
 
-async function attemptTurn({ config, cwd, message, context, effort, mode, resume, signal, hooks, onResume }) {
+async function attemptTurn({ config, cwd, message, images, context, effort, mode, resume, signal, hooks, onResume }) {
   const key = hacksKey(config);
   if (!key) throw agyError('el modo agy necesita tu api key de hacksllm (/key)');
   const root = path.resolve(cwd);
   const tr = translator(root);
   const headers = { authorization: `Bearer ${key}`, 'content-type': 'application/json' };
-  const body = { message, context, effort, mode, resume, folder: tr.folder, where: root, os: process.platform, shell: hooks.shellName?.() ?? 'bash', tree: scanTree(root) };
+  const body = { message, images: images?.length ? images : undefined, context, effort, mode, resume, folder: tr.folder, where: root, os: process.platform, shell: hooks.shellName?.() ?? 'bash', tree: scanTree(root) };
   let response;
   try {
     response = await openStream(`${SITE}/agy/turn`, body, headers, signal);
