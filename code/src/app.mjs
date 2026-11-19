@@ -264,7 +264,7 @@ export class App {
     const item = this.add((w) => {
       const shade = bg(item.pending ? '#3b2f63' : '#262c4d');
       const lines = userBlock(text, w - 2).map(highlightTags);
-      if (item.pending) lines.push(`  ${dim('en cola · se lee en el siguiente paso')}`);
+      if (item.pending) lines.push(`  ${dim(isAgy(this.config.model) ? 'en cola · va en cuanto acabe este turno' : 'en cola · se lee en el siguiente paso')}`);
       return lines.map((line) => shade(pad(line, w - 1)));
     });
     item.user = true;
@@ -1136,7 +1136,7 @@ export class App {
       return true;
     };
     this.addUser(display);
-    await this.run(async () => {
+    const ended = await this.run(async () => {
       let content = this.withContext(text);
       for (const [tag, image] of images) {
         const item = this.add(() => [notice(`mirando ${tag}…`, c.plum)], { gap: 0 });
@@ -1148,15 +1148,34 @@ export class App {
       await (isAgy(this.config.model) ? this.agyTurns(content) : this.agent.send(content));
     });
     this.unsent = null;
+    if (await this.leftovers(ended)) return;
     await this.pursueGoal();
   }
 
+  // Mensajes en cola que el turno no llego a leer (fallo o lo cortaste): nunca se pierden. Si lo interrumpiste vuelven
+  // a la entrada para editarlos; si no, se mandan como mensaje nuevo.
+  async leftovers(ended) {
+    if (!this.agent.queue.length) return false;
+    if (ended.interrupted) {
+      this.unqueue();
+      this.render();
+      return true;
+    }
+    const text = this.agent.queue.splice(0).join('\n\n');
+    for (const item of this.pendingSteer.splice(0)) item.remove();
+    await this.send(text);
+    return true;
+  }
+
   // Modo agy: un turno de Antigravity y, si escribiste mientras trabajaba, otro con eso (agy no lee a mitad de turno).
+  // El mensaje en cola se mueve abajo del todo, despues de la respuesta del turno que acaba de terminar.
   async agyTurns(content) {
     await runAgy(this, content);
     while (this.agent.queue.length && !this.running?.interrupted) {
       const text = this.agent.queue.splice(0).join('\n\n');
-      this.agentUi().onSteer(text);
+      for (const item of this.pendingSteer.splice(0)) item.remove();
+      this.endText();
+      this.addUser(text);
       this.unsent = null;
       await runAgy(this, text);
     }
@@ -1200,8 +1219,10 @@ export class App {
     return extra.length ? `${extra.join('\n\n')}\n\n${text}` : text;
   }
 
+  // Devuelve el estado del turno (interrupted incluido) para saber como acabo.
   async run(job) {
-    this.running = { started: Date.now(), verb: VERBS[Math.floor(Math.random() * VERBS.length)], chars: 0 };
+    const state = { started: Date.now(), verb: VERBS[Math.floor(Math.random() * VERBS.length)], chars: 0 };
+    this.running = state;
     this.verbTimer = setInterval(() => {
       if (this.running) this.running.verb = VERBS[Math.floor(Math.random() * VERBS.length)];
     }, 9000);
@@ -1244,6 +1265,7 @@ export class App {
       this.refreshFiles();
       this.render();
     }
+    return state;
   }
 
   // ---------- eventos del agente ----------
