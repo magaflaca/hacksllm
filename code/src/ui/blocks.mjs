@@ -51,7 +51,7 @@ export function toolBlock(view, outcome, { columns, verbose }) {
     return lines;
   }
   if (outcome.diff && name === 'write') {
-    lines.push(...result([`${c.soft(outcome.summary)} ${dim('· clic para ver')}`]));
+    lines.push(...result([`${linkify(outcome.summary, c.soft)} ${dim('· clic para ver')}`]));
     return lines;
   }
   if (name === 'shell' && outcome.output !== undefined) {
@@ -69,7 +69,7 @@ export function toolBlock(view, outcome, { columns, verbose }) {
     return lines;
   }
   const more = typeof outcome.content === 'string' && outcome.content.length > 80 && !outcome.todos ? ` ${dim('· clic para ver')}` : '';
-  lines.push(...result([`${c.soft(outcome.summary ?? 'listo')}${more}`]));
+  lines.push(...result([`${linkify(outcome.summary ?? 'listo', c.soft)}${more}`]));
   return lines;
 }
 

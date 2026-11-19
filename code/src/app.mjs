@@ -21,7 +21,7 @@ import { Editor } from './ui/editor.mjs';
 import { FullScreen, parseMouse } from './ui/fullscreen.mjs';
 import { createDecoder } from './ui/keys.mjs';
 import { renderMarkdown } from './ui/markdown.mjs';
-import { bg, bold, c, dim, fg, pad, shimmer, strip, truncate, width, wrap } from './ui/term.mjs';
+import { bg, bold, c, dim, fg, linkify, pad, shimmer, strip, truncate, width, wrap } from './ui/term.mjs';
 import { Pet, PET_ROWS, PET_WIDTH } from './ui/pet.mjs';
 import { ResumePicker } from './ui/resume.mjs';
 import { linksIn, paintSelection, selectedText, Transcript } from './ui/transcript.mjs';
@@ -359,7 +359,7 @@ export class App {
     const item = this.add((w) => {
       const head = toolTitle({ label, tool: { name } }, failed ? 'error' : 'done');
       const open = this.config.verbose || item.expanded;
-      if (!open) return [head, `  ${c.soft('╰')}  ${c.soft(truncate(summary, w - 24))} ${dim('· clic para ver')}`];
+      if (!open) return [head, `  ${c.soft('╰')}  ${linkify(truncate(summary, w - 24), c.soft)} ${dim('· clic para ver')}`];
       if (ops) return [head, `  ${c.soft('╰')}  ${c.soft(summary)}`, ...renderDiff(ops, { columns: w - 6, maxLines: 2000 }).map((line) => `     ${line}`)];
       return [head, ...result.split('\n').slice(0, 2000).map((line, i) => `  ${i ? ' ' : c.soft('╰')}  ${dim(line)}`)];
     });

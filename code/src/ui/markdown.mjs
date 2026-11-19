@@ -7,21 +7,26 @@ const codeInline = fg('#a6d2ff');
 export function inline(text) {
   const spans = [];
   // Primero el codigo en linea, para que su contenido no se interprete.
-  let out = text.replace(/`([^`\n]+)`/g, (_, code) => {
-    // Un link entre comillas invertidas tambien es link (los modelos suelen ponerlos asi).
-    spans.push(isUrl(code) ? linkStyle(code) : codeInline(code));
+  const keep = (rendered) => {
+    spans.push(rendered);
     return `\u0000${spans.length - 1}\u0000`;
-  });
+  };
+  // Un link entre comillas invertidas tambien es link (los modelos suelen ponerlos asi).
+  let out = text.replace(/`([^`\n]+)`/g, (_, code) => keep(isUrl(code) ? linkStyle(code) : codeInline(code)));
+  // Los links se apartan antes del resto: asi un **link en negrita** sigue siendo link y los _ de una url no se
+  // vuelven cursiva.
+  out = out
+    .replace(/!?\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, label, url) => keep(hyperlink(url, underline(c.sky(label)))))
+    .replace(new RegExp(`(^|[\\s(*_~])(${URL_SOURCE})`, 'g'), (_, pre, url) => {
+      // Sin la puntuacion ni los ** o _ de cierre que vengan pegados (ni un trozo ya apartado detras).
+      const clean = url.split('\u0000')[0].replace(/[.,;:!?*_~]+$/, '');
+      return pre + keep(linkStyle(clean)) + url.slice(clean.length);
+    });
   out = out
     .replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__/g, (_, a, b) => bold(a ?? b))
     .replace(/(^|[^*\w])\*([^*\s][^*\n]*?)\*(?!\w)/g, (_, pre, body) => pre + italic(body))
     .replace(/(^|[^_\w])_([^_\s][^_\n]*?)_(?!\w)/g, (_, pre, body) => pre + italic(body))
-    .replace(/~~([^~\n]+)~~/g, (_, body) => strike(body))
-    .replace(/!?\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, label, url) => hyperlink(url, underline(c.sky(label))))
-    .replace(new RegExp(`(^|[\\s(])(${URL_SOURCE})`, 'g'), (_, pre, url) => {
-      const clean = url.replace(/[.,;:!?]+$/, '');
-      return pre + linkStyle(clean) + url.slice(clean.length);
-    });
+    .replace(/~~([^~\n]+)~~/g, (_, body) => strike(body));
   return out.replace(/\u0000(\d+)\u0000/g, (_, index) => spans[Number(index)]);
 }
 
