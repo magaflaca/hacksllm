@@ -61,7 +61,7 @@ export const strip = (text) => String(text).replace(ANSI, '');
 // Ancho de un caracter en celdas: 0 para marcas combinantes, 2 para anchos de Asia oriental y simbolos graficos.
 export function charWidth(point) {
   if (point < 32 || (point >= 0x7f && point < 0xa0)) return 0;
-  if ((point >= 0x300 && point <= 0x36f) || (point >= 0x200b && point <= 0x200f) || (point >= 0xfe00 && point <= 0xfe0f)) return 0;
+  if ((point >= 0x300 && point <= 0x36f) || (point >= 0x200b && point <= 0x200f) || (point >= 0x2060 && point <= 0x2064) || (point >= 0xfe00 && point <= 0xfe0f) || point === 0xfeff) return 0;
   if (
     (point >= 0x1100 && point <= 0x115f) ||
     (point >= 0x2e80 && point <= 0xa4cf) ||

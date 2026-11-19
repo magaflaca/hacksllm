@@ -23,7 +23,8 @@ export function inline(text) {
       return pre + keep(linkStyle(clean)) + url.slice(clean.length);
     });
   out = out
-    .replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__/g, (_, a, b) => bold(a ?? b))
+    // La negrita puede llevar cursiva dentro: **Ataque (*chiff*)**.
+    .replace(/\*\*((?:[^*\n]|\*(?!\*))+)\*\*|__((?:[^_\n]|_(?!_))+)__/g, (_, a, b) => bold(a ?? b))
     .replace(/(^|[^*\w])\*([^*\s][^*\n]*?)\*(?!\w)/g, (_, pre, body) => pre + italic(body))
     .replace(/(^|[^_\w])_([^_\s][^_\n]*?)_(?!\w)/g, (_, pre, body) => pre + italic(body))
     .replace(/~~([^~\n]+)~~/g, (_, body) => strike(body));

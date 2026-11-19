@@ -36,7 +36,8 @@ export const pagePublish = {
   label: (input) => ({ title: 'Publicar pagina', arg: `${input.folder ?? ''} → ${PUBLIC_BASE.replace('https://', '')}/${slugify(input.name)}/` }),
   async run(input, ctx) {
     const page = await publishFolder(ctx.config, path.resolve(ctx.cwd, String(input.folder ?? '.')), input.name, { signal: ctx.signal });
-    return { content: `${page.updated ? 'actualizada' : 'publicada'}: ${page.url} (${page.count} archivos)`, summary: page.url };
+    const skipped = page.skipped?.length ? ` · sin subir (no son de una web estatica): ${page.skipped.slice(0, 20).join(', ')}${page.skipped.length > 20 ? '…' : ''}` : '';
+    return { content: `${page.updated ? 'actualizada' : 'publicada'}: ${page.url} (${page.count} archivos)${skipped}`, summary: page.url };
   },
 };
 

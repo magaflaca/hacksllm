@@ -46,7 +46,7 @@ function killTree(child) {
   }
 }
 
-const shellEnv = () => ({ ...process.env, BICHI: '1', GIT_PAGER: 'cat', PAGER: 'cat', TERM: process.env.TERM ?? 'xterm-256color' });
+export const shellEnv = () => ({ ...process.env, BICHI: '1', GIT_PAGER: 'cat', PAGER: 'cat', TERM: process.env.TERM ?? 'xterm-256color' });
 
 function start(command, ctx) {
   const shell = detectShell(ctx.config?.shell);

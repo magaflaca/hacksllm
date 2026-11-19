@@ -7,8 +7,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { deleteTool, projectProblem, runAgyTurn, translator } from './core/agy.mjs';
 import { write } from './tools/fs.mjs';
+import { pagePublish } from './tools/pages.mjs';
 import { invalidate } from './tools/files.mjs';
-import { detectShell, shell } from './tools/shell.mjs';
+import { startJob, tail } from './tools/jobs.mjs';
+import { detectShell, shell, shellEnv } from './tools/shell.mjs';
 import { saveConfig } from './config.mjs';
 import { notice } from './ui/blocks.mjs';
 import { c } from './ui/term.mjs';
@@ -61,6 +63,24 @@ const STEPS = {
   other: { tool: 'agy', title: 'Paso' },
 };
 const CONTEXT = 30_000;
+
+// Comandos que se quedan corriendo (servidores, watchers, "... &"): van como shell en segundo plano.
+const LASTING = [
+  /(^|[^&])&\s*$/,
+  /\b(npm|pnpm|yarn|bun)\s+(run\s+)?(start|dev|serve|preview|watch)\b/,
+  /\b(npx\s+)?(serve|http-server|live-server|vite|nodemon|parcel)(\s|$)/,
+  /\bnext\s+(dev|start)\b/,
+  /\b(python3?|py)\s+-m\s+http\.server\b/,
+  /\b(flask\s+run|uvicorn|gunicorn|php\s+-S|rails\s+s(erver)?|streamlit\s+run)\b/,
+  /\bmanage\.py\s+runserver\b/,
+  /\bdotnet\s+(run|watch)\b/,
+  /\bjava\s+(-\S+\s+)*-jar\b/,
+  /^(python3?|py)\s+\S*(server|app|main|bot|api)\.py(\s+[^&|;]*)?$/,
+  /^(nohup\s+)?(node|deno|bun|python3?|py)\s+\S*(server|serve|app|index|main)\.(m?js|ts|py)(\s+[^&|;]*)?$/,
+];
+const lasting = (command) => !/\n/.test(command.trim()) && LASTING.some((pattern) => pattern.test(command.trim()));
+// Sin el nohup ni el & del final: el shell en segundo plano ya lo deja vivo.
+const detach = (command) => command.trim().replace(/^nohup\s+/, '').replace(/^(cd\s+\S+\s*&&\s*)nohup\s+/, '$1').replace(/\s*&\s*$/, '');
 
 // La conversacion que habia antes de pasar a agy, para que no empiece de cero.
 const transcript = (messages) =>
@@ -154,12 +174,39 @@ export async function runAgy(app, content) {
       if (app.mode === 'plan') return { out: 'modo plan: todavia no se ejecutan comandos; presenta el plan primero\n', code: 1 };
       const input = { command, timeout: 600 };
       const view = { id: `agy-r${++n}`, tool: shell, input, label: shell.label(input), sub: null };
+      const extra = notes.splice(0).join('\n');
+      // bichi-publicar <carpeta> <nombre>: publicar como bichi pagina, con su propio permiso y su link.
+      const publish = /^\s*bichi-publicar\s+("?)(.+?)\1\s+(\S+)\s*$/.exec(command);
+      if (publish) {
+        const input = { folder: publish[2], name: publish[3] };
+        const publishView = { id: view.id, tool: pagePublish, input, label: pagePublish.label(input), sub: null };
+        const refused = await agent.permit(pagePublish, input, publishView, ctx(rel));
+        if (refused) return { out: `${refused}\n`, code: 1 };
+        ui.onToolStart?.(publishView);
+        try {
+          const result = await pagePublish.run(input, ctx(rel));
+          ui.onToolEnd?.(publishView, result);
+          return { out: `${result.content}\n${extra}`, code: 0 };
+        } catch (error) {
+          ui.onToolEnd?.(publishView, { error: error.message });
+          return { out: `no se pudo publicar: ${error.message}. No muevas ni borres archivos del usuario para arreglarlo: cuentale que paso.\n`, code: 1 };
+        }
+      }
       const refusal = await agent.permit(shell, input, view, ctx(rel));
       if (refusal) return { out: `${refusal}\n`, code: 1 };
       ui.onToolStart?.(view);
+      // Servidores y procesos que no terminan: un shell en segundo plano de bichi (sale en la barra, sigue vivo al
+      // acabar el turno y se puede ver o parar), en vez de esperar a que terminen.
+      if (lasting(command)) {
+        const job = startJob(detectShell(app.config.shell), detach(command), path.resolve(app.cwd, rel), shellEnv());
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        const first = tail(job, 4000).replace(/\r\n/g, '\n');
+        ui.onToolEnd?.(view, { output: first, summary: `en segundo plano (shell ${job.number})` });
+        const log = job.log.replace(/\\/g, '/');
+        return { out: `${first}\n(sigue corriendo en segundo plano en la computadora del usuario como "shell ${job.number}"; bichi lo muestra abajo y sigue vivo al terminar el turno. su salida se va guardando: tail -n 50 "${log}")${extra ? `\n${extra}` : ''}`, code: 0 };
+      }
       const result = await shell.run(input, ctx(rel)).catch((error) => ({ content: error.message, output: error.message, exit: 1 }));
       ui.onToolEnd?.(view, result);
-      const extra = notes.splice(0).join('\n');
       return { out: `${result.output ?? result.content ?? ''}${extra ? `\n${extra}` : ''}`, code: result.exit ?? (result.summary === 'tiempo agotado' ? 124 : 0) };
     },
 

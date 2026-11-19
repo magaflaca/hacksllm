@@ -128,6 +128,34 @@ function postJson(url, body, headers) {
   });
 }
 
+// El turno tambien va por su propia conexion (no por fetch): mientras dura, bichi sigue pudiendo usar fetch contra
+// la misma web (publicar una pagina, describir una imagen...) sin quedarse esperando detras.
+function openStream(url, body, headers, signal) {
+  const target = new URL(url);
+  const data = Buffer.from(JSON.stringify(body));
+  const client = target.protocol === 'https:' ? https : http;
+  return new Promise((resolve, reject) => {
+    const request = client.request(target, { method: 'POST', agent: false, headers: { ...headers, 'content-length': data.length } }, (response) => {
+      const status = response.statusCode ?? 0;
+      resolve({
+        ok: status >= 200 && status < 300,
+        status,
+        body: response,
+        text: async () => {
+          let out = '';
+          for await (const chunk of response) out += chunk;
+          return out;
+        },
+      });
+    });
+    const abort = () => request.destroy(Object.assign(new Error('interrumpido'), { name: 'AbortError' }));
+    signal?.addEventListener('abort', abort, { once: true });
+    request.on('close', () => signal?.removeEventListener('abort', abort));
+    request.on('error', reject);
+    request.end(data);
+  });
+}
+
 const agyError = (message, extra = {}) => Object.assign(new Error(`agy: ${message}`), extra);
 
 // Un turno: manda el mensaje, atiende lo que pide agy y devuelve { ok, text, resume, model }. Si la conexion falla
@@ -165,7 +193,7 @@ async function attemptTurn({ config, cwd, message, context, effort, mode, resume
   const body = { message, context, effort, mode, resume, folder: tr.folder, where: root, os: process.platform, shell: hooks.shellName?.() ?? 'bash', tree: scanTree(root) };
   let response;
   try {
-    response = await fetch(`${SITE}/agy/turn`, { method: 'POST', headers, body: JSON.stringify(body), signal });
+    response = await openStream(`${SITE}/agy/turn`, body, headers, signal);
   } catch (error) {
     if (signal?.aborted) throw error;
     throw agyError('no hay conexion con hacksllm', { retry: true });

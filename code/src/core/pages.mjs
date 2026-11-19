@@ -22,9 +22,11 @@ export const slugify = (text) =>
     .slice(0, 40)
     .replace(/-+$/, '');
 
-// Archivos publicables de una carpeta, con los mismos limites que el servidor para avisar antes de subir.
+// Archivos publicables de una carpeta, con los mismos limites que el servidor. Lo que no es de una web (codigo de
+// servidor, archivos de mas de 10 MB) no se sube y queda en files.skipped, sin tocar la carpeta.
 export function siteFiles(root) {
   const files = [];
+  files.skipped = [];
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       if (SKIP(entry.name)) continue;
@@ -32,9 +34,11 @@ export function siteFiles(root) {
       if (entry.isDirectory()) walk(full);
       else if (entry.isFile()) {
         const relative = path.relative(root, full).split(path.sep).join('/');
-        if (!ALLOWED.test(relative)) throw new Error(`${relative} no es un archivo estatico que se pueda publicar (quitalo o muevelo fuera)`);
         const { size } = statSync(full);
-        if (size > MAX_FILE) throw new Error(`${relative} pasa de 10 MB`);
+        if (!ALLOWED.test(relative) || size > MAX_FILE) {
+          files.skipped.push(relative);
+          continue;
+        }
         files.push({ path: relative, full, size });
         if (files.length > MAX_FILES) throw new Error(`mas de ${MAX_FILES} archivos`);
       }
@@ -119,7 +123,7 @@ export async function publishFolder(config, folder, name, { signal } = {}) {
   const files = siteFiles(folder);
   const body = zip(files.map((file) => ({ name: file.path, data: readFileSync(file.full) })));
   const page = await workApi(config)(route(slug), { method: 'PUT', body, type: 'application/zip', timeout: 180000, signal });
-  return { ...page, count: files.length };
+  return { ...page, count: files.length, skipped: files.skipped };
 }
 
 // Baja la copia fuente de una de tus paginas a una carpeta local (sobrescribe lo que coincida).

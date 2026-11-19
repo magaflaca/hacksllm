@@ -398,6 +398,8 @@ const unmount = (mnt) => new Promise((resolve) => spawn('fusermount3', ['-uz', m
 // ---- el prompt
 
 const FOLDER = /^[A-Za-z0-9._-]{1,60}$/;
+// Publicar como bichi pagina: bichi code atiende este comando en la PC (con permiso del usuario) y devuelve el link.
+const PUBLISH = 'Para publicar una web estatica como bichi pagina (solo si el usuario lo pide), ejecuta en la terminal: bichi-publicar <carpeta con index.html> <nombre>. Devuelve el link publico (https://bichi.hacks.win/<nombre>/).';
 
 function preamble(body, folder) {
   const shell = body.shell === 'powershell' ? 'PowerShell de Windows' : body.os === 'win32' ? 'Git Bash en Windows (sirven los comandos de bash y las rutas tipo C:/...)' : 'bash';
@@ -407,7 +409,9 @@ function preamble(body, folder) {
     `Los comandos de tu terminal se ejecutan en su computadora con ${shell}; ~ es su carpeta de usuario. Instalar, compilar o ejecutar programas pasa alli, no aqui.`,
     `Fuera de /pc/${folder} esta maquina no tiene nada del usuario: para otras carpetas suyas (Descargas, Escritorio...) usa comandos, no tus herramientas de archivos.`,
     `Los archivos de mas de 25 MB no se pueden leer con tus herramientas de archivos (para esos usa comandos). Si existen AGENTS.md, CLAUDE.md o .bichi/BICHI.md en el proyecto, siguelos.`,
-    'Responde en el idioma del usuario, claro y breve. Puedes publicar webs estaticas como bichi paginas solo si el usuario lo pide.',
+    'Responde en el idioma del usuario, claro y breve.',
+    PUBLISH,
+    'No busques herramientas, archivos ni configuracion de bichi en la computadora del usuario: lo que necesitas esta aqui.',
   ];
   const context = String(body.context ?? '').slice(-LIMITS.context);
   if (context) lines.push('', 'Conversacion anterior con el usuario (para que tengas el contexto):', context);
@@ -466,7 +470,10 @@ async function runTurn(turn) {
     if (turn.controller.signal.aborted) break;
     if (index) turn.send({ t: 'status', text: 'cambiando de modelo…' });
     const resume = /^[A-Za-z0-9_-]{1,80}$/.test(resumes[entry.key] ?? '') ? resumes[entry.key] : null;
-    const prompt = resume ? message : preamble(body, folder) + message;
+    // En una conversacion retomada el preambulo ya esta; si pide publicar, se le recuerda como.
+    const prompt = resume ? (/publica|bichi ?p[aá]gina/i.test(message) ? `${message}
+
+[bichi] ${PUBLISH}` : message) : preamble(body, folder) + message;
     turn.modelKey = entry.key;
     const result = await runModel(turn, { model: entry.model(effort), resume, mode, folder, prompt });
     if (result.ok) return { ok: true, text: result.final, model: entry.key, resume: { ...resumes, [entry.key]: result.conversation ?? resume } };

@@ -701,7 +701,15 @@ export class App {
       return this.scroll(event.type === 'wheelup' ? -3 : 3);
     }
     // Clic derecho: pega lo que haya en el portapapeles (la terminal no puede, porque bichi usa el raton).
-    if (event.type === 'press' && event.button === 2) return this.pasteClipboard();
+    // Con algo seleccionado (ya copiado), el clic derecho solo quita la seleccion; el siguiente pega.
+    if (event.type === 'press' && event.button === 2) {
+      if (this.selection || this.editor.selection()) {
+        this.selection = null;
+        this.editor.anchor = null;
+        return this.render();
+      }
+      return this.pasteClipboard();
+    }
     if (event.type === 'press' && event.button === 0) {
       this.selection = null;
       this.editor.anchor = null;
@@ -1032,7 +1040,14 @@ export class App {
   }
 
   // Pegar (o arrastrar a la terminal) la ruta de una imagen la adjunta como [Imagen #n].
-  paste(text) {
+  paste(raw) {
+    // Sin invisibles (la marca BOM que mete PowerShell, espacios de ancho cero) ni tabs: el cursor contaria
+    // columnas que la terminal no dibuja y quedaria un hueco despues del texto.
+    const text = String(raw)
+      .replace(/\r\n?/g, '\n')
+      .replace(/\t/g, '  ')
+      .replace(/[\u200b-\u200f\u2060-\u2064\ufeff]/g, '')
+      .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
     const image = imagePath(text, this.cwd);
     if (image) return this.attach(storeImage(image));
     this.editor.paste(text);
@@ -1583,7 +1598,7 @@ export function openTarget(url) {
 function readClipboard() {
   const [command, args] =
     process.platform === 'win32'
-      ? ['powershell.exe', ['-NoProfile', '-Command', '[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-Clipboard -Raw']]
+      ? ['powershell.exe', ['-NoProfile', '-Command', '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; Get-Clipboard -Raw']]
       : process.platform === 'darwin'
         ? ['pbpaste', []]
         : ['sh', ['-c', 'wl-paste --no-newline 2>/dev/null || xclip -selection clipboard -o']];
