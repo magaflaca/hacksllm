@@ -16,7 +16,7 @@ import { listFiles } from './tools/files.mjs';
 import { backgroundJobs, killAll, shell as shellTool, stopJob } from './tools/shell.mjs';
 import { beetle, logo } from './ui/art.mjs';
 import { deniedBlock, notice, READ_TOOLS, readGroupBlock, reasoningBlock, todoLines, toolBlock, toolTitle, userBlock } from './ui/blocks.mjs';
-import { renderDiff } from './ui/diff.mjs';
+import { diffLines, renderDiff, stats } from './ui/diff.mjs';
 import { Editor } from './ui/editor.mjs';
 import { FullScreen, parseMouse } from './ui/fullscreen.mjs';
 import { createDecoder } from './ui/keys.mjs';
@@ -192,13 +192,33 @@ export class App {
   }
 
   async exit(code = 0) {
+    // Con shells en segundo plano, se pregunta: pueden seguir vivos sin bichi (como servidores de desarrollo).
+    const running = backgroundJobs().filter((job) => job.exit === null);
+    let kept = 0;
+    if (running.length && !this.exiting) {
+      this.exiting = true;
+      const choice = await this.choose({
+        title: 'antes de salir',
+        body: [`${running.length === 1 ? 'hay 1 shell corriendo' : `hay ${running.length} shells corriendo`} en segundo plano:`, ...running.map((job) => c.soft(`  shell ${job.number} · ${truncate(job.command, 70)}`))],
+        options: [
+          { label: 'dejarlos corriendo y salir', hint: 'siguen vivos; los veras al volver a abrir bichi', value: 'keep' },
+          { label: 'detenerlos y salir', value: 'stop' },
+          { label: 'no salir', value: null, hint: 'esc' },
+        ],
+        escape: null,
+      });
+      this.exiting = false;
+      if (!choice) return this.render();
+      if (choice === 'stop') killAll();
+      else kept = running.length;
+    }
     clearInterval(this.ticker);
     this.saveSession();
     flushState(this.state);
-    killAll();
     this.term.leave();
     const total = this.agent.usage.prompt + this.agent.usage.completion;
     const lines = [`${c.brand('●')} ${c.ice('hasta luego')}${total ? c.soft(`  · ${formatTokens(total)} tokens en esta sesion`) : ''}`];
+    if (kept) lines.push(c.soft(`  ${kept === 1 ? 'queda 1 shell corriendo' : `quedan ${kept} shells corriendo`} en segundo plano (/jobs para verlos)`));
     if (this.session.messages.length) lines.push(c.soft(`  para seguir: bichi -r ${this.session.id}`));
     process.stdout.write(`${lines.join('\n')}\n`);
     process.stdin.setRawMode?.(false);
@@ -294,8 +314,7 @@ export class App {
           }
           const tool = tools.find((item) => item.name === call.function.name);
           const label = tool ? safe(() => tool.label(input, { cwd: this.cwd })) : { title: call.function.name, arg: '' };
-          const first = result.split('\n').find(Boolean) ?? '';
-          this.add((w) => [toolTitle({ label }, result.startsWith('error') ? 'error' : 'done'), `  ${c.soft('╰')}  ${c.soft(truncate(first, w - 8))}`]);
+          this.addReplayedTool(call.function.name, label, input, result);
         }
       }
       const stamp = this.session.stamps?.[index];
@@ -303,6 +322,26 @@ export class App {
     }
     this.follow = true;
     this.render();
+  }
+
+  // Herramienta de una conversacion retomada: plegada como siempre y con clic se abre. Las ediciones reconstruyen
+  // su diff con los argumentos guardados (texto viejo y nuevo); el resto muestra su resultado.
+  addReplayedTool(name, label, input, result) {
+    const failed = result.startsWith('error');
+    const first = result.split('\n').find(Boolean) ?? '';
+    let ops = null;
+    if (!failed && name === 'edit' && typeof input.old_string === 'string') ops = diffLines(input.old_string, String(input.new_string ?? ''));
+    if (!failed && name === 'write' && typeof input.content === 'string') ops = diffLines('', input.content);
+    const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    const summary = ops ? `${plural(stats(ops).added, 'linea nueva', 'lineas nuevas')}, ${plural(stats(ops).removed, 'quitada', 'quitadas')}` : first;
+    const item = this.add((w) => {
+      const head = toolTitle({ label, tool: { name } }, failed ? 'error' : 'done');
+      const open = this.config.verbose || item.expanded;
+      if (!open) return [head, `  ${c.soft('╰')}  ${c.soft(truncate(summary, w - 24))} ${dim('· clic para ver')}`];
+      if (ops) return [head, `  ${c.soft('╰')}  ${c.soft(summary)}`, ...renderDiff(ops, { columns: w - 6, maxLines: 2000 }).map((line) => `     ${line}`)];
+      return [head, ...result.split('\n').slice(0, 2000).map((line, i) => `  ${i ? ' ' : c.soft('╰')}  ${dim(line)}`)];
+    });
+    item.toggle = () => (item.expanded = !item.expanded);
   }
 
   // ---------- dibujo ----------
@@ -619,9 +658,12 @@ export class App {
       return this.render();
     }
     if (event.type === 'drag' && this.pressed) {
+      const end = { line: this.top + Math.min(event.y, this.viewH - 1), col: event.x };
+      // Con el seguimiento de movimiento la terminal manda "arrastres" sin moverse: eso sigue siendo un clic.
+      if (!this.selection && end.line === this.pressed.line && Math.abs(end.col - this.pressed.col) < 2) return;
       if (event.y >= this.viewH) this.scroll(1);
       if (event.y <= 0) this.scroll(-1);
-      this.selection = { start: this.pressed, end: { line: this.top + Math.min(event.y, this.viewH - 1), col: event.x } };
+      this.selection = { start: this.pressed, end };
       return this.render();
     }
     if (event.type === 'release' && this.pressed) {

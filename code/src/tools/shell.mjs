@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { invalidate } from './files.mjs';
+import * as jobs from './jobs.mjs';
 
 const MAX_OUTPUT = 30_000;
 
@@ -45,19 +46,20 @@ function killTree(child) {
   }
 }
 
+const shellEnv = () => ({ ...process.env, BICHI: '1', GIT_PAGER: 'cat', PAGER: 'cat', TERM: process.env.TERM ?? 'xterm-256color' });
+
 function start(command, ctx) {
   const shell = detectShell(ctx.config?.shell);
   return spawn(shell.file, shell.args(command), {
     cwd: ctx.cwd,
-    env: { ...process.env, BICHI: '1', GIT_PAGER: 'cat', PAGER: 'cat', TERM: process.env.TERM ?? 'xterm-256color' },
+    env: shellEnv(),
     windowsHide: true,
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 }
 
-const background = new Map();
-let nextId = 1;
+const readSoFar = new Map(); // cuanto de cada log ya se le dio al modelo con shell_output
 
 export const shell = {
   name: 'shell',
@@ -80,6 +82,15 @@ export const shell = {
   async run(input, ctx) {
     const command = String(input.command ?? '');
     if (!command.trim()) throw new Error('comando vacio');
+
+    if (input.background) {
+      const job = jobs.startJob(detectShell(ctx.config?.shell), command, ctx.cwd, shellEnv());
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const first = jobs.tail(job, 4000);
+      readSoFar.set(job.id, first.length);
+      return { content: `en segundo plano con id ${job.id} (sigue vivo aunque se cierre bichi). salida inicial:\n${first || '(nada aun)'}`, summary: `en segundo plano (shell ${job.number})` };
+    }
+
     const child = start(command, ctx);
     let output = '';
     const collect = (chunk) => {
@@ -89,20 +100,6 @@ export const shell = {
     };
     child.stdout.on('data', collect);
     child.stderr.on('data', collect);
-
-    if (input.background) {
-      const id = `bg${nextId++}`;
-      const job = { id, number: nextId - 1, command, child, output: '', read: 0, exit: null, started: Date.now() };
-      child.stdout.removeAllListeners('data');
-      child.stderr.removeAllListeners('data');
-      const keep = (chunk) => (job.output = (job.output + chunk.toString('utf8')).slice(-200_000));
-      child.stdout.on('data', keep);
-      child.stderr.on('data', keep);
-      child.on('close', (code) => (job.exit = code ?? -1));
-      background.set(id, job);
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      return { content: `en segundo plano con id ${id}. salida inicial:\n${job.output.slice(0, 4000) || '(nada aun)'}`, summary: `en segundo plano (${id})` };
-    }
 
     const seconds = Math.min(600, Math.max(1, Number(input.timeout) || 120));
     let timedOut = false;
@@ -142,10 +139,12 @@ export const shellOutput = {
   parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   label: (input) => ({ title: 'Salida', arg: input.id }),
   async run(input) {
-    const job = background.get(input.id);
-    if (!job) throw new Error(`no hay proceso ${input.id}. activos: ${[...background.keys()].join(', ') || 'ninguno'}`);
-    const fresh = job.output.slice(job.read);
-    job.read = job.output.length;
+    const all = jobs.list();
+    const job = all.find((item) => item.id === input.id);
+    if (!job) throw new Error(`no hay proceso ${input.id}. activos: ${all.map((item) => item.id).join(', ') || 'ninguno'}`);
+    const output = job.output;
+    const fresh = output.slice(Math.min(readSoFar.get(job.id) ?? 0, output.length));
+    readSoFar.set(job.id, output.length);
     return { content: `${job.exit === null ? 'sigue corriendo' : `termino con codigo ${job.exit}`}\n${clip(fresh) || '(sin salida nueva)'}`, summary: job.exit === null ? 'corriendo' : `termino (${job.exit})` };
   },
 };
@@ -157,22 +156,15 @@ export const shellKill = {
   parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   label: (input) => ({ title: 'Detener', arg: input.id }),
   async run(input) {
-    const job = background.get(input.id);
-    if (!job) throw new Error(`no hay proceso ${input.id}`);
-    killTree(job.child);
-    background.delete(input.id);
+    if (!jobs.stop(input.id)) throw new Error(`no hay proceso ${input.id}`);
     return { content: 'detenido', summary: 'detenido' };
   },
 };
 
-export const backgroundJobs = () => [...background.values()];
+export const backgroundJobs = () => jobs.list();
 
 // Detiene un proceso en segundo plano (desde la barra de abajo o /jobs).
-export function stopJob(id) {
-  const job = background.get(id);
-  if (!job) return false;
-  killTree(job.child);
-  background.delete(id);
-  return true;
-}
-export const killAll = () => background.forEach((job) => killTree(job.child));
+export const stopJob = (id) => jobs.stop(id);
+
+// Al salir y elegir detenerlos.
+export const killAll = () => jobs.list().forEach((job) => job.exit === null && jobs.stop(job.id));

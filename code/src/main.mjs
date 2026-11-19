@@ -8,7 +8,6 @@ import { Router } from './core/router.mjs';
 import { listSessions, loadSession, newSessionId, saveSession } from './core/sessions.mjs';
 import { activeProviders } from './providers.mjs';
 import { startMcp, stopMcp } from './tools/mcp.mjs';
-import { killAll } from './tools/shell.mjs';
 import { autoUpdate, update } from './updater.mjs';
 import { c, dim } from './ui/term.mjs';
 
@@ -86,7 +85,6 @@ async function headless({ config, state, router, cwd, settings, prompt, mode, se
     saveSession(current);
     flushState(state);
     stopMcp();
-    killAll();
   }
 }
 
