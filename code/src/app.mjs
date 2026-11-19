@@ -21,10 +21,10 @@ import { Editor } from './ui/editor.mjs';
 import { FullScreen, parseMouse } from './ui/fullscreen.mjs';
 import { createDecoder } from './ui/keys.mjs';
 import { renderMarkdown } from './ui/markdown.mjs';
-import { bg, bold, c, dim, fg, linkify, pad, shimmer, strip, truncate, width, wrap } from './ui/term.mjs';
+import { bg, bold, c, dim, fg, pad, shimmer, strip, truncate, width, wrap } from './ui/term.mjs';
 import { Pet, PET_ROWS, PET_WIDTH } from './ui/pet.mjs';
 import { ResumePicker } from './ui/resume.mjs';
-import { linksIn, paintSelection, selectedText, Transcript } from './ui/transcript.mjs';
+import { linksIn, paintSelection, selectedText, Transcript, underlineLink } from './ui/transcript.mjs';
 import { box, Field, HistorySearch, Menu } from './ui/widgets.mjs';
 
 const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -359,7 +359,7 @@ export class App {
     const item = this.add((w) => {
       const head = toolTitle({ label, tool: { name } }, failed ? 'error' : 'done');
       const open = this.config.verbose || item.expanded;
-      if (!open) return [head, `  ${c.soft('╰')}  ${linkify(truncate(summary, w - 24), c.soft)} ${dim('· clic para ver')}`];
+      if (!open) return [head, `  ${c.soft('╰')}  ${c.soft(truncate(summary, w - 24))} ${dim('· clic para ver')}`];
       if (ops) return [head, `  ${c.soft('╰')}  ${c.soft(summary)}`, ...renderDiff(ops, { columns: w - 6, maxLines: 2000 }).map((line) => `     ${line}`)];
       return [head, ...result.split('\n').slice(0, 2000).map((line, i) => `  ${i ? ' ' : c.soft('╰')}  ${dim(line)}`)];
     });
@@ -389,7 +389,11 @@ export class App {
     if (this.top >= maxTop) this.follow = true;
     this.viewH = viewH;
     this.allLines = all;
-    const view = all.slice(this.top, this.top + viewH).map((line, i) => paintSelection(line, this.top + i, this.selection));
+    const hovered = this.hoverLink;
+    const view = all.slice(this.top, this.top + viewH).map((line, i) => {
+      const painted = hovered?.line === this.top + i ? underlineLink(line, hovered.k) : line;
+      return paintSelection(painted, this.top + i, this.selection);
+    });
     while (view.length < viewH) view.push('');
     // Tu pregunta queda fija arriba mientras lees su respuesta; clic para volver a ella.
     this.sticky = null;
@@ -668,7 +672,11 @@ export class App {
     }
     const inView = event.y < this.viewH;
     // Sobre una lista (sugerencias o menu), el raton elige: pasar por encima selecciona y la rueda la recorre.
-    if (event.type === 'move') return this.pressed ? null : this.hover(event.y - this.viewH);
+    if (event.type === 'move') {
+      if (this.pressed) return null;
+      this.hoverOnLink(inView ? this.top + event.y : -1, event.x);
+      return this.hover(event.y - this.viewH);
+    }
     if (event.type === 'wheelup' || event.type === 'wheeldown') {
       const list = !inView && (this.overlay?.options ? this.overlay : this.suggestions);
       if (list?.options ?? list?.items) {
@@ -794,6 +802,16 @@ export class App {
     this.term.prev = [];
     if (id) (await import('./commands.mjs')).resumeInto(this, loadSession(id));
     this.setTitle();
+    this.render();
+  }
+
+  // Los links no van subrayados: se subrayan solo mientras el raton esta encima.
+  hoverOnLink(line, col) {
+    const links = line >= 0 ? linksIn(this.allLines?.[line] ?? '') : [];
+    const k = links.findIndex((link) => col >= link.from && col < link.to);
+    const next = k >= 0 ? { line, k } : null;
+    if (next?.line === this.hoverLink?.line && next?.k === this.hoverLink?.k) return;
+    this.hoverLink = next;
     this.render();
   }
 

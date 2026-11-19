@@ -199,7 +199,7 @@ export const URL_SOURCE = String.raw`(?:https?:\/\/|\b(?:bichi|llm)\.hacks\.win)
 const URL_PATTERN = new RegExp(URL_SOURCE, 'g');
 export const isUrl = (text) => new RegExp(`^${URL_SOURCE}$`).test(text);
 const trimUrl = (url) => url.replace(/[.,;:!?]+$/, ''); // el punto final de la frase no es parte del link
-export const linkStyle = (url, label = url) => hyperlink(/^https?:/.test(url) ? url : `https://${url}`, underline(c.sky(label)));
+export const linkStyle = (url, label = url) => hyperlink(/^https?:/.test(url) ? url : `https://${url}`, c.sky(label));
 
 // Pinta los links de un texto (azules, subrayados y clicables) y el resto con `color`.
 export function linkify(text, color = (part) => part) {

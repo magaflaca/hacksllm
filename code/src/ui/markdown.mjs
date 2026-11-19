@@ -16,7 +16,7 @@ export function inline(text) {
   // Los links se apartan antes del resto: asi un **link en negrita** sigue siendo link y los _ de una url no se
   // vuelven cursiva.
   out = out
-    .replace(/!?\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, label, url) => keep(hyperlink(url, underline(c.sky(label)))))
+    .replace(/!?\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, label, url) => keep(linkStyle(url, label)))
     .replace(new RegExp(`(^|[\\s(*_~])(${URL_SOURCE})`, 'g'), (_, pre, url) => {
       // Sin la puntuacion ni los ** o _ de cierre que vengan pegados (ni un trozo ya apartado detras).
       const clean = url.split('\u0000')[0].replace(/[.,;:!?*_~]+$/, '');

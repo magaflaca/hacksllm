@@ -36,7 +36,7 @@ const SLEEP_LINES = SLEEP.map(paint);
 
 export const PET_WIDTH = 12;
 export const PET_ROWS = 5;
-const IDLE_SLEEP = 10 * 60 * 1000; // diez minutos sin tocar nada
+const IDLE_SLEEP = 2 * 60 * 1000; // dos minutos sin tocar nada
 const WALK_CHANCE = 0.03; // por cada medio minuto quieto: un paseo cada quince minutos, mas o menos
 
 export class Pet {

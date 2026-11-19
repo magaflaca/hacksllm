@@ -102,6 +102,22 @@ export function selectedText(lines, selection) {
   return out.join('\n');
 }
 
+// Subraya el link numero `k` de la linea (el que tiene el raton encima).
+export function underlineLink(line, k) {
+  let seen = -1;
+  let open = false;
+  return line.replace(/\x1b\]8;;([^\x07\x1b]*)(?:\x07|\x1b\\)/g, (whole, url) => {
+    if (url) {
+      seen++;
+      open = seen === k;
+      return open ? `${whole}\x1b[4m` : whole;
+    }
+    if (!open) return whole;
+    open = false;
+    return `\x1b[24m${whole}`;
+  });
+}
+
 // Links OSC 8 de una linea: [{from, to, url}] en columnas.
 export function linksIn(line) {
   const links = [];
