@@ -2,14 +2,15 @@
 import { renderDiff } from './diff.mjs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { bold, c, dim, fg, hyperlink, italic, wrap } from './term.mjs';
+import { bold, c, dim, fg, hyperlink, italic, linkify, wrap } from './term.mjs';
 
 const BAR = c.soft('╰');
 
 export function userBlock(text, columns) {
   const lines = text.split('\n');
   const shown = lines.length > 12 ? [...lines.slice(0, 10), `… ${lines.length - 10} lineas mas`] : lines;
-  return shown.flatMap((line, i) => wrap(line, columns - 3).map((part, k) => `${i === 0 && k === 0 ? c.brand('› ') : '  '}${c.ice(part)}`));
+  // Los links que mandes (por ejemplo tu bichi pagina) se ven azules y se abren con clic.
+  return shown.flatMap((line, i) => wrap(linkify(line, c.ice), columns - 3).map((part, k) => `${i === 0 && k === 0 ? c.brand('› ') : '  '}${part}`));
 }
 
 export function toolTitle(view, state = 'done') {

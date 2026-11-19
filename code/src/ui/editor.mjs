@@ -1,5 +1,5 @@
 // Editor de la caja de entrada: texto multilinea, cursor, historial y pegados grandes resumidos.
-import { charWidth } from './term.mjs';
+import { charWidth, width } from './term.mjs';
 
 const BIG_PASTE = { chars: 1200, lines: 12 };
 
@@ -177,73 +177,77 @@ export class Editor {
     this.hIndex = this.history.length;
   }
 
-  // Parte el texto en filas de `inner` columnas y ubica el cursor.
+  // Parte el texto en filas de `inner` columnas y ubica el cursor. Como un procesador de texto: si la ultima palabra
+  // no cabe, baja entera a la fila siguiente (solo una palabra mas larga que la fila se parte).
+  // Devuelve rows (texto), starts (indice donde empieza cada fila), ends (si la fila cierra su linea) y cursor.
   layout(inner) {
     const rows = [];
-    const starts = []; // indice del texto donde empieza cada fila
-    let cursor = { row: 0, col: 0 };
+    const starts = [];
+    const ends = [];
     let offset = 0;
     for (const line of this.text.split('\n')) {
-      let row = '';
+      let rowStart = 0;
       let used = 0;
-      let index = offset;
-      const place = () => {
-        if (index === this.cursor) cursor = { row: rows.length, col: used };
-      };
-      for (const char of line) {
-        const w = charWidth(char.codePointAt(0));
-        if (used + w > inner) {
-          rows.push(row);
-          starts.push(index - row.length);
-          row = '';
-          used = 0;
+      let lastBreak = -1; // donde se puede cortar: justo despues del ultimo espacio de la fila
+      for (let j = 0; j < line.length; ) {
+        const point = line.codePointAt(j);
+        const size = point > 0xffff ? 2 : 1;
+        const w = charWidth(point);
+        if (used + w > inner && used > 0) {
+          // Un espacio que no cabe se queda colgando al final de la fila (no empieza la siguiente).
+          const cut = line[j] === ' ' ? j + 1 : lastBreak > rowStart ? lastBreak : j;
+          rows.push(line.slice(rowStart, cut));
+          starts.push(offset + rowStart);
+          ends.push(false);
+          rowStart = cut;
+          used = width(line.slice(rowStart, j));
+          lastBreak = -1;
+          if (cut === j + 1) {
+            j = cut;
+            continue;
+          }
         }
-        place();
-        row += char;
         used += w;
-        index += char.length;
+        if (line[j] === ' ') lastBreak = j + 1;
+        j += size;
       }
-      if (used >= inner && index === this.cursor) {
-        rows.push(row);
-        starts.push(index - row.length);
-        row = '';
-        used = 0;
-      }
-      place();
-      rows.push(row);
-      starts.push(index - row.length);
-      offset = index + 1;
+      rows.push(line.slice(rowStart));
+      starts.push(offset + rowStart);
+      ends.push(true);
+      offset += line.length + 1;
     }
-    return { rows, cursor, starts };
+    // El cursor va en la fila que lo contiene; al final de una fila llena, en una fila nueva debajo.
+    let cursor = { row: rows.length - 1, col: 0 };
+    for (let r = 0; r < rows.length; r++) {
+      const end = starts[r] + rows[r].length;
+      if (this.cursor < starts[r] || this.cursor > end || (this.cursor === end && !ends[r])) continue;
+      const col = width(this.text.slice(starts[r], this.cursor));
+      if (col >= inner && ends[r]) {
+        rows.splice(r + 1, 0, '');
+        starts.splice(r + 1, 0, end);
+        ends.splice(r, 2, false, true);
+        cursor = { row: r + 1, col: 0 };
+      } else cursor = { row: r, col };
+      break;
+    }
+    return { rows, cursor, starts, ends };
   }
 
   // Indice del texto en la fila/columna visible de layout(inner) (para poner el cursor con un clic).
   // Se queda en el caracter cuya mitad izquierda se toco; mas alla del final de la fila, al final de la fila.
   positionAt(inner, targetRow, targetCol) {
-    let row = 0;
-    let offset = 0;
-    let best = null;
-    for (const line of this.text.split('\n')) {
-      let used = 0;
-      let index = offset;
-      for (const char of line) {
-        const w = charWidth(char.codePointAt(0));
-        if (used + w > inner) {
-          if (row === targetRow) return index;
-          row++;
-          used = 0;
-        }
-        if (row === targetRow && targetCol < used + Math.ceil(w / 2)) return index;
-        used += w;
-        index += char.length;
-      }
-      if (row === targetRow) return index;
-      if (used >= inner && index === this.cursor) row++; // igual que layout: fila extra solo con el cursor ahi
-      best = index;
-      row++;
-      offset = index + 1;
+    const { rows, starts, ends } = this.layout(inner);
+    const r = Math.max(0, Math.min(rows.length - 1, targetRow));
+    let used = 0;
+    let index = starts[r];
+    for (const char of rows[r]) {
+      const w = charWidth(char.codePointAt(0));
+      if (targetCol < used + Math.ceil(w / 2)) return index;
+      used += w;
+      index += char.length;
     }
-    return best ?? this.text.length;
+    // Fila partida: el final de la fila es el principio de la siguiente, asi que el cursor se queda antes.
+    return ends[r] ? index : Math.max(starts[r], index - 1);
   }
 
   // Palabra que se esta escribiendo (para completar /comandos y @archivos).

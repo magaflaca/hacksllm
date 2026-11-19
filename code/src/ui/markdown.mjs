@@ -1,6 +1,6 @@
 // Markdown a terminal, linea a linea para poder pintar mientras llega el stream.
 import { highlight } from './highlight.mjs';
-import { bold, c, dim, fg, hyperlink, italic, strike, underline, width, wrap } from './term.mjs';
+import { bold, c, dim, fg, hyperlink, isUrl, italic, linkStyle, strike, underline, URL_SOURCE, width, wrap } from './term.mjs';
 
 const codeInline = fg('#a6d2ff');
 
@@ -8,7 +8,8 @@ export function inline(text) {
   const spans = [];
   // Primero el codigo en linea, para que su contenido no se interprete.
   let out = text.replace(/`([^`\n]+)`/g, (_, code) => {
-    spans.push(codeInline(code));
+    // Un link entre comillas invertidas tambien es link (los modelos suelen ponerlos asi).
+    spans.push(isUrl(code) ? linkStyle(code) : codeInline(code));
     return `\u0000${spans.length - 1}\u0000`;
   });
   out = out
@@ -17,7 +18,10 @@ export function inline(text) {
     .replace(/(^|[^_\w])_([^_\s][^_\n]*?)_(?!\w)/g, (_, pre, body) => pre + italic(body))
     .replace(/~~([^~\n]+)~~/g, (_, body) => strike(body))
     .replace(/!?\[([^\]\n]+)\]\(([^)\s]+)\)/g, (_, label, url) => hyperlink(url, underline(c.sky(label))))
-    .replace(/(^|\s)(https?:\/\/[^\s)]+)/g, (_, pre, url) => pre + hyperlink(url, underline(c.sky(url))));
+    .replace(new RegExp(`(^|[\\s(])(${URL_SOURCE})`, 'g'), (_, pre, url) => {
+      const clean = url.replace(/[.,;:!?]+$/, '');
+      return pre + linkStyle(clean) + url.slice(clean.length);
+    });
   return out.replace(/\u0000(\d+)\u0000/g, (_, index) => spans[Number(index)]);
 }
 

@@ -193,3 +193,23 @@ export function shimmer(text, tick, base = PALETTE.brand, light = PALETTE.ice) {
 export function hyperlink(url, text = url) {
   return NO_COLOR ? text : `\x1b]8;;${url}\x07${text}\x1b]8;;\x07`;
 }
+
+// Enlaces en texto plano: http(s)://... y tambien las direcciones de hacksllm sin el https (bichi.hacks.win/mi-web).
+export const URL_SOURCE = String.raw`(?:https?:\/\/|\b(?:bichi|llm)\.hacks\.win)[^\s<>()\[\]` + '`"\']*';
+const URL_PATTERN = new RegExp(URL_SOURCE, 'g');
+export const isUrl = (text) => new RegExp(`^${URL_SOURCE}$`).test(text);
+const trimUrl = (url) => url.replace(/[.,;:!?]+$/, ''); // el punto final de la frase no es parte del link
+export const linkStyle = (url, label = url) => hyperlink(/^https?:/.test(url) ? url : `https://${url}`, underline(c.sky(label)));
+
+// Pinta los links de un texto (azules, subrayados y clicables) y el resto con `color`.
+export function linkify(text, color = (part) => part) {
+  let out = '';
+  let last = 0;
+  for (const match of text.matchAll(URL_PATTERN)) {
+    const url = trimUrl(match[0]);
+    if (match.index > last) out += color(text.slice(last, match.index));
+    out += linkStyle(url);
+    last = match.index + url.length;
+  }
+  return out + (last < text.length ? color(text.slice(last)) : '');
+}
