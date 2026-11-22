@@ -9,6 +9,7 @@ import { downloadPage, listPages, PUBLIC_BASE, publishFolder, removePage, siteFi
 import { workApi } from './core/work.mjs';
 import { isAgy, projectProblem } from './core/agy.mjs';
 import { AGY_HINT, setAgy } from './agy-mode.mjs';
+import { CODEX_HINT, isCodex, levelName, pickCodexEffort, pickCodexModel, setCodex } from './codex-mode.mjs';
 import { expandCommand, loadAgents, loadCommands, loadMemory, memoryFiles } from './core/project.mjs';
 import { ago, listSessions, loadSession } from './core/sessions.mjs';
 import { findSkill, listSkills, skillText } from './core/skills.mjs';
@@ -34,6 +35,7 @@ export const COMMANDS = [
   { name: 'model', description: 'elegir modelo (o auto)' },
   { name: 'effort', description: 'esfuerzo: bajo, medio o alto' },
   { name: 'agy', description: 'modo agy: el mas capaz, ideal para proyectos grandes; otra vez para volver' },
+  { name: 'codex', description: 'modo codex: los modelos de ChatGPT, con su propio esfuerzo; otra vez para volver' },
   { name: 'mode', description: 'modo: normal, acepta ediciones, plan, sin preguntas' },
   { name: 'plan', description: 'entrar o salir del modo plan' },
   { name: 'config', description: 'ajustes, proveedores y claves' },
@@ -95,12 +97,19 @@ export const ARG_HINTS = {
 export function argChoices(app, name) {
   switch (name) {
     case 'model':
+      // En modo codex se eligen los modelos de la cuenta de ChatGPT.
+      if (isCodex(app.config.model)) return (app.state.codexModels?.list ?? []).map((model) => ({ value: model.id, hint: model.description || model.name }));
       return [
         { value: 'auto', hint: 'el mejor disponible, cambia solo si se agota' },
         { value: 'bichi-agy', hint: AGY_HINT },
+        { value: 'bichi-codex', hint: CODEX_HINT },
         ...catalog(app.config).map((entry) => ({ value: entry.alias, hint: entry.note })),
       ];
     case 'effort':
+      if (isCodex(app.config.model)) {
+        const model = (app.state.codexModels?.list ?? []).find((item) => item.id === app.config.codex?.model);
+        return (model?.efforts ?? []).map((level) => ({ value: level.effort, hint: `${levelName(level.effort)}${level.description ? ` · ${level.description}` : ''}` }));
+      }
       return [
         { value: 'bajo', hint: 'rapido y directo' },
         { value: 'medio', hint: 'equilibrado' },
@@ -150,8 +159,13 @@ export async function runCommand(app, name, args, raw) {
       return print((await import('./app.mjs')).shortcutsHelp());
     case 'agy':
       return setAgy(app, !isAgy(app.config.model));
+    case 'codex':
+      return setCodex(app, !isCodex(app.config.model));
     case 'model':
       if (isAgy(args)) return setAgy(app, true);
+      if (isCodex(args)) return setCodex(app, true);
+      // En modo codex, /model elige entre los modelos de la cuenta (auto o un modelo de bichi salen del modo).
+      if (isCodex(app.config.model) && (!args || !(args === 'auto' || catalog(app.config).some((item) => [item.alias, item.id, item.key].includes(args))))) return pickCodexModel(app, args);
       if (args) {
         const entry = catalog(app.config).find((item) => [item.alias, item.id, item.key].includes(args));
         if (args === 'auto' || entry) {
@@ -164,6 +178,7 @@ export async function runCommand(app, name, args, raw) {
       }
       return pickModel(app);
     case 'effort':
+      if (isCodex(app.config.model)) return pickCodexEffort(app, args);
       return pickEffort(app, { bajo: 'low', medio: 'medium', alto: 'high' }[args] ?? args);
     case 'mode': {
       const wanted = MODES.find((mode) => mode === args || MODE_INFO[mode].label === args);

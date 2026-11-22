@@ -14,6 +14,7 @@ import { displayName } from './providers.mjs';
 import { ARG_HINTS, argChoices, COMMANDS, runCommand } from './commands.mjs';
 import { runAgy } from './agy-mode.mjs';
 import { isAgy } from './core/agy.mjs';
+import { codexEffort, codexLabel, isCodex, levelName } from './codex-mode.mjs';
 import { listFiles } from './tools/files.mjs';
 import { backgroundJobs, killAll, shell as shellTool, stopJob } from './tools/shell.mjs';
 import { beetle, logo } from './ui/art.mjs';
@@ -88,7 +89,7 @@ export class App {
   }
 
   makeAgent() {
-    return new Agent({
+    const agent = new Agent({
       config: this.config,
       state: this.state,
       router: this.router,
@@ -98,6 +99,9 @@ export class App {
       mode: () => this.mode,
       ui: this.agentUi(),
     });
+    // Clave de cache de la conversacion (bichi-codex retoma lo ya leido en cada peticion).
+    agent.cacheKey = () => this.session.id;
+    return agent;
   }
 
   // ---------- arranque y salida ----------
@@ -422,6 +426,7 @@ export class App {
 
   modelLabel() {
     if (isAgy(this.config.model)) return 'bichi-agy';
+    if (isCodex(this.config.model)) return codexLabel(this);
     const entry = this.router.current ?? this.router.candidates().awake[0] ?? this.router.candidates().list[0];
     if (this.config.model === 'auto') return entry ? `auto · ${displayName(this.config, entry)}` : 'auto';
     return entry ? displayName(this.config, entry) : this.config.model;
@@ -459,7 +464,7 @@ export class App {
     } else {
       this.clickRows.suggestions = lines.length;
       lines.push(...this.suggestionLines(W));
-      const [glyph, effort] = EFFORT[this.config.effort] ?? EFFORT.medium;
+      const [glyph, effort] = isCodex(this.config.model) ? [EFFORT[codexEffort(this)]?.[0] ?? '●', levelName(codexEffort(this))] : (EFFORT[this.config.effort] ?? EFFORT.medium);
       const right = `${c.sky(this.modelLabel())} ${c.soft('·')} ${c.soft(`${glyph} ${effort} · /effort`)}`;
       const rightStart = Math.max(0, W - 2 - width(right));
       // La mascota va sobre la linea de la entrada, sin pisar el texto de la derecha.

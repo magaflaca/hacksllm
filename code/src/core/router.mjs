@@ -3,6 +3,8 @@
 import { saveState } from '../config.mjs';
 import { chain, displayName } from '../providers.mjs';
 import { ApiError, streamChat } from './client.mjs';
+import { codexEntry, isCodex } from './codex.mjs';
+import { streamResponses } from './responses.mjs';
 import { describeTools, parseToolCalls, toTextMessages } from './protocol.mjs';
 import { backoff, RETRIES, sleep } from './retry.mjs';
 
@@ -43,8 +45,9 @@ export class Router {
     saveState(this.state);
   }
 
-  candidates(selection) {
-    const list = chain(this.config, selection);
+  candidates(selection = this.config.model) {
+    // En modo codex solo esta el modelo elegido de la cuenta de ChatGPT (no se salta a los de bichi).
+    const list = isCodex(selection) ? [codexEntry(this.config, this.state.codexModels?.list)] : chain(this.config, selection);
     const awake = list.filter((entry) => !this.resting(entry.key));
     return { list, awake };
   }
@@ -69,7 +72,7 @@ export class Router {
     }
   }
 
-  async attempt({ messages, tools, effort, signal, model, onStart = () => {}, onDelta = () => {}, onSwitch = () => {} }) {
+  async attempt({ messages, tools, effort, signal, model, cacheKey, onStart = () => {}, onDelta = () => {}, onSwitch = () => {} }) {
     const { list, awake } = this.candidates(model ?? this.config.model);
     if (!list.length) throw new Error('no hay modelos configurados. usa /config para poner una api key.');
     const queue = awake.length ? awake : [...list].sort((a, b) => (this.state.cooldowns[a.key] ?? 0) - (this.state.cooldowns[b.key] ?? 0)).slice(0, 1);
@@ -83,7 +86,7 @@ export class Router {
         let streamed = false;
         onStart({ entry, mode, name: this.name(entry) });
         try {
-          const result = await this.once({ entry, mode, messages, tools, effort, signal, onDelta: (delta) => ((streamed = true), onDelta(delta)) });
+          const result = await this.once({ entry, mode, messages, tools, effort, cacheKey, signal, onDelta: (delta) => ((streamed = true), onDelta(delta)) });
           if (!result.text.trim() && !result.calls.length) throw Object.assign(new ApiError(502, 'respuesta vacia', entry.provider.label), { empty: true });
           this.current = entry;
           return { ...result, entry, name: this.name(entry) };
@@ -124,7 +127,12 @@ export class Router {
     return mode === 'auto' ? 'native' : mode;
   }
 
-  async once({ entry, mode, messages, tools, effort, signal, onDelta }) {
+  async once({ entry, mode, messages, tools, effort, cacheKey, signal, onDelta }) {
+    // API Responses (bichi-codex): su propio formato, su esfuerzo y la clave de cache de la conversacion.
+    if (entry.provider.wire === 'responses') {
+      const result = await streamResponses({ provider: entry.provider, model: entry.id, messages, tools, effort: entry.effort ?? effort, cacheKey, signal, onDelta });
+      return { ...result, calls: result.calls.map((call) => ({ ...call, arguments: call.arguments || '{}' })), mode };
+    }
     const dropped = new Set(this.state.dropped[entry.key] ?? []);
     const params = {};
     if (!dropped.has('stream_options')) params.stream_options = { include_usage: true };
@@ -136,7 +144,7 @@ export class Router {
       const [system, ...rest] = messages;
       payload = [{ role: 'system', content: `${system.content}\n\n${describeTools(tools)}` }, ...toTextMessages(rest)];
     } else {
-      payload = messages.map((message) =>
+      payload = messages.map(({ replay, ...message }) =>
         message.role === 'tool' ? { role: 'tool', tool_call_id: message.tool_call_id, content: message.content } : message,
       );
       toolDefs = tools.map((tool) => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } }));

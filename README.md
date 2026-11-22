@@ -111,6 +111,30 @@ bichi code (PC) <-> Pages /agy/* -> nginx /agy/ -> hacksllm-agy :20140 (usuario 
 - `deploy/setup-agy.sh` lo instala sin tocar bichi work (usuario, sesion de agy, venv con mfusepy, sudoers,
   servicio y la ruta en nginx).
 
+### bichi codex
+
+Modo de bichi code (`/codex`, `/model codex` o `/model bichi-codex`) con los modelos de una cuenta de ChatGPT (la
+de Codex), compartida entre los usuarios de bichi y aparte de los modelos de siempre. Dentro del modo, `/model`
+elige entre los modelos de la cuenta y `/effort` entre los niveles de esfuerzo que admite cada uno.
+
+```
+bichi code (PC: agente, herramientas, permisos) <-> Pages /codex/* -> nginx /codex/ -> hacksllm-codex :20142
+                                                                       |  sesion de ChatGPT (auth.json)
+                                                                       v
+                                                        chatgpt.com/backend-api/codex/responses
+```
+
+- Mas simple que agy: el agente, las herramientas y el historial son los de bichi en la PC; al VPS solo van las
+  peticiones al modelo (API Responses), y el servicio les pone la sesion de la cuenta con las cabeceras de Codex.
+- Continuidad como Codex: cada conversacion manda su clave de cache (`prompt_cache_key` y `session_id`, por
+  usuario), asi el modelo retoma lo ya leido en vez de empezar de cero en cada peticion, y el razonamiento cifrado
+  de cada paso se guarda con el mensaje y vuelve al modelo en las siguientes (nada se guarda en el servidor).
+- La sesion vive solo en `/srv/hacksllm-codex/auth.json` y solo este servicio la renueva (el token rota en cada
+  renovacion: no conectar la misma cuenta en OmniRoute ni en otro Codex).
+- Limites: 3 respuestas a la vez por clave y 8 en total.
+- `deploy/setup-codex.sh` lo instala (servicio, CLI de Codex solo para iniciar sesion, ruta en nginx) y
+  `bichi-codex-login` conecta la cuenta con codigo de dispositivo.
+
 ### bichi paginas
 
 Webs estaticas en `https://bichi.hacks.win/<nombre>` que no caducan: viven hasta que su dueno (la clave que las
@@ -164,6 +188,8 @@ El instalador deja `bichi` en `~/.bichi/bin` (en el PATH) y, si no hay Node 20+,
   en pantalla se ve la conversacion original completa.
 - **Modo agy**: `/agy` pone a Antigravity (Gemini 3.8 Flash) a trabajar en tu carpeta desde el VPS, con tus
   permisos y tu `/undo` (ver bichi agy arriba).
+- **Modo codex**: `/codex` usa los modelos de la cuenta de ChatGPT compartida, con su propio `/model` y `/effort`
+  (ver bichi codex arriba).
 - **Bichi paginas**: `/paginas` lista, abre, trae para editar o quita tus webs de bichi.hacks.win, y
   `/paginas publicar` sube una carpeta con index.html (zip contra `/work/pages/<nombre>`). El agente tiene
   `pages_list`, `page_publish` y `page_download`.

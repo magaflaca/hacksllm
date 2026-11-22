@@ -1,0 +1,20 @@
+[Unit]
+Description=bichi codex: los modelos de la cuenta de ChatGPT para bichi code
+After=network-online.target hacksllm.service
+
+[Service]
+Type=simple
+User=hacksllm
+Group=hacksllm
+WorkingDirectory=/opt/hacksllm/work
+ExecStart=/opt/hacksllm/runtime/bin/node codex.mjs
+EnvironmentFile=/opt/hacksllm/env
+Environment=NODE_ENV=production
+Environment=CODEX_PORT=20142
+Environment=CODEX_HOME=/srv/hacksllm-codex
+Restart=always
+RestartSec=3
+MemoryMax=400M
+
+[Install]
+WantedBy=multi-user.target

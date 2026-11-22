@@ -1,5 +1,6 @@
 // Menus de configuracion: elegir modelo, ajustes generales y proveedores con sus claves.
 import { AGY_HINT, setAgy } from './agy-mode.mjs';
+import { CODEX_HINT, setCodex } from './codex-mode.mjs';
 import { saveConfig } from './config.mjs';
 import { ago } from './core/sessions.mjs';
 import { catalog, displayName, fetchModels, PRESETS, providerOf, rankModels } from './providers.mjs';
@@ -24,6 +25,7 @@ export async function pickModel(app) {
   const options = [
     { label: `auto`, hint: 'empieza por el mejor y cambia solo cuando uno se agota', value: 'auto', selected: config.model === 'auto' },
     { label: 'bichi-agy', hint: AGY_HINT, value: 'agy', selected: config.model === 'agy' },
+    { label: 'bichi-codex', hint: CODEX_HINT, value: 'codex', selected: config.model === 'codex' },
     ...entries.map((entry) => ({
       label: displayName(config, entry),
       hint: `${config.realNames ? entry.provider.label : entry.note}${entry.provider.name !== 'hacksllm' && !config.realNames ? ` · ${entry.provider.label}` : ''}${restingNote(entry)}`,
@@ -35,6 +37,7 @@ export async function pickModel(app) {
   const choice = await app.choose({ title: 'modelo', body: [dim('si el elegido se queda sin cuota, bichi sigue con el siguiente de la lista.')], options, escape: null, footer: '/names muestra los nombres reales' });
   if (!choice) return;
   if (choice === 'agy') return setAgy(app, true);
+  if (choice === 'codex') return setCodex(app, true);
   config.model = choice;
   router.current = choice === 'auto' ? null : entries.find((entry) => entry.key === choice);
   saveConfig(config);

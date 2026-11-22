@@ -167,6 +167,8 @@ export class Agent {
         role: 'assistant',
         content: text || (calls.length ? '' : '(sin respuesta)'),
         ...(calls.length ? { tool_calls: calls.map((call) => ({ id: call.id, type: 'function', function: { name: call.name, arguments: call.arguments } })) } : {}),
+        // bichi-codex: el razonamiento cifrado vuelve al modelo en la siguiente peticion (los demas lo ignoran).
+        ...(result.replay?.length ? { replay: result.replay } : {}),
       });
       if (!calls.length) {
         if (this.queue.length) continue;
@@ -208,6 +210,8 @@ export class Agent {
       effort: this.config.effort,
       signal,
       model: this.sub?.model ?? undefined,
+      // Clave de cache por conversacion (la usa bichi-codex para retomar lo ya leido).
+      cacheKey: this.cacheKey?.(),
       onStart: (info) => {
         raw = '';
         shown = 0;
