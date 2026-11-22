@@ -211,16 +211,25 @@ async function respond(req, res, owner) {
     if (!response.ok) {
       const text = await response.text().catch(() => '');
       let message = text.slice(0, 600);
+      let until = null;
       try {
         const parsed = JSON.parse(text);
-        message = parsed.error?.message ?? parsed.detail?.message ?? parsed.detail ?? message;
-        if (parsed.error?.resets_in_seconds) message += ` (se libera en ${Math.ceil(parsed.error.resets_in_seconds / 60)} min)`;
+        const error = parsed.error ?? {};
+        message = error.message ?? parsed.detail?.message ?? parsed.detail ?? message;
+        // Limite de uso de la cuenta: hasta cuando (el cliente lo dice en su hora local).
+        until = error.resets_at ? error.resets_at * 1000 : error.resets_in_seconds ? Date.now() + error.resets_in_seconds * 1000 : null;
+        if (response.status === 429 && (until || /usage_limit/.test(error.type ?? ''))) message = 'la cuenta de ChatGPT llego a su limite de uso';
       } catch {
         /* no era json */
       }
-      return fail(res, response.status, String(message) || `error ${response.status}`);
+      const after = Number(response.headers.get('retry-after'));
+      until ??= after ? Date.now() + after * 1000 : null;
+      return send(res, response.status, { error: { message: String(message) || `error ${response.status}`, until } });
     }
-    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', 'x-accel-buffering': 'no' });
+    // Los porcentajes de uso de la cuenta viajan con la respuesta (bichi avisa cuando se acerca al limite).
+    const usage = {};
+    for (const [name, value] of response.headers) if (name.startsWith('x-codex-')) usage[name] = value;
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', 'x-accel-buffering': 'no', ...usage });
     let timer = null;
     const idle = () => {
       clearTimeout(timer);

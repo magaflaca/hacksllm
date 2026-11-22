@@ -12,6 +12,7 @@ import { invalidate } from './tools/files.mjs';
 import { startJob, tail } from './tools/jobs.mjs';
 import { detectShell, shell, shellEnv } from './tools/shell.mjs';
 import { saveConfig } from './config.mjs';
+import { untilLabel } from './core/retry.mjs';
 import { notice } from './ui/blocks.mjs';
 import { c } from './ui/term.mjs';
 
@@ -243,7 +244,8 @@ export async function runAgy(app, content, images = []) {
       hooks,
     });
     app.session.agy = result.resume;
-    if (!result.ok) throw new Error(result.text);
+    // Sin cuota: se dice hasta cuando (en la hora de aqui).
+    if (!result.ok) throw new Error(result.until ? `${result.text}; vuelve ${untilLabel(result.until)}` : result.text);
     if (!streamed.trim() && result.text) ui.onText?.(result.text);
     ui.onAssistantEnd?.({ text: result.text, calls: 0 });
     agent.messages.push({ role: 'assistant', content: result.text || streamed });

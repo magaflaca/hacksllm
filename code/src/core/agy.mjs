@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { SITE } from '../config.mjs';
-import { backoff, RETRIES, sleep, transient } from './retry.mjs';
+import { backoff, RETRIES, sleep, transient, untilLabel } from './retry.mjs';
 import { hacksKey } from './work.mjs';
 
 export const isAgy = (model) => model === 'agy' || model === 'bichi-agy';
@@ -293,7 +293,7 @@ async function attemptTurn({ config, cwd, message, images, context, effort, mode
           handle(op).then((result) => reply(id, result));
         } else if (event.t === 'ev') hooks.onEvent?.(event);
         else if (event.t === 'resume') onResume(event.model, event.id);
-        else if (event.t === 'status') hooks.onStatus?.(event.text);
+        else if (event.t === 'status') hooks.onStatus?.(event.until ? `${event.text} (vuelve ${untilLabel(event.until)})` : event.text);
         else if (event.t === 'done') done = event;
       }
     }
@@ -307,7 +307,7 @@ async function attemptTurn({ config, cwd, message, images, context, effort, mode
   }
   if (signal?.aborted) throw Object.assign(new Error('interrumpido'), { name: 'AbortError' });
   if (!done) throw agyError('se corto la conexion', { cut: true, retry: true });
-  return { ok: Boolean(done.ok), text: tr.display(String(done.text ?? '')), resume: done.resume ?? resume, model: done.model };
+  return { ok: Boolean(done.ok), text: tr.display(String(done.text ?? '')), resume: done.resume ?? resume, model: done.model, until: done.until ?? null };
 }
 
 // Para pedir permiso al borrar: se ve como una herramienta mas.

@@ -47,7 +47,7 @@ export class Agent {
   }
 
   contextLimit() {
-    return this.router.current?.context ?? 128000;
+    return this.router.current?.context ?? this.router.candidates().list[0]?.context ?? 128000;
   }
 
   contextUsed() {
@@ -212,6 +212,7 @@ export class Agent {
       model: this.sub?.model ?? undefined,
       // Clave de cache por conversacion (la usa bichi-codex para retomar lo ya leido).
       cacheKey: this.cacheKey?.(),
+      onNotice: (text) => this.ui.onNotice?.(text),
       onStart: (info) => {
         raw = '';
         shown = 0;

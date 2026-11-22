@@ -72,7 +72,7 @@ export class Router {
     }
   }
 
-  async attempt({ messages, tools, effort, signal, model, cacheKey, onStart = () => {}, onDelta = () => {}, onSwitch = () => {} }) {
+  async attempt({ messages, tools, effort, signal, model, cacheKey, onNotice, onStart = () => {}, onDelta = () => {}, onSwitch = () => {} }) {
     const { list, awake } = this.candidates(model ?? this.config.model);
     if (!list.length) throw new Error('no hay modelos configurados. usa /config para poner una api key.');
     const queue = awake.length ? awake : [...list].sort((a, b) => (this.state.cooldowns[a.key] ?? 0) - (this.state.cooldowns[b.key] ?? 0)).slice(0, 1);
@@ -86,13 +86,14 @@ export class Router {
         let streamed = false;
         onStart({ entry, mode, name: this.name(entry) });
         try {
-          const result = await this.once({ entry, mode, messages, tools, effort, cacheKey, signal, onDelta: (delta) => ((streamed = true), onDelta(delta)) });
+          const result = await this.once({ entry, mode, messages, tools, effort, cacheKey, onNotice, signal, onDelta: (delta) => ((streamed = true), onDelta(delta)) });
           if (!result.text.trim() && !result.calls.length) throw Object.assign(new ApiError(502, 'respuesta vacia', entry.provider.label), { empty: true });
           this.current = entry;
           return { ...result, entry, name: this.name(entry) };
         } catch (error) {
           if (error.name === 'AbortError' || signal?.aborted) throw Object.assign(new Error('interrumpido'), { name: 'AbortError' });
-          const verdict = error.empty ? { kind: 'rest', rest: MINUTE, reason: 'respuesta vacia' } : classify(error);
+          // Un limite de uso que dice hasta cuando: se descansa justo eso (sin reintentos si es largo).
+          const verdict = error.until ? { kind: 'rest', rest: Math.max(MINUTE, error.until - Date.now()), reason: error.plain, until: error.until } : error.empty ? { kind: 'rest', rest: MINUTE, reason: 'respuesta vacia' } : classify(error);
           const key = entry.key;
           if (verdict.kind === 'context') throw new ContextError(error.message);
           if (verdict.kind === 'param') {
@@ -107,7 +108,7 @@ export class Router {
             if (streamed) onSwitch({ from: entry, to: entry, reason: 'reintento', reset: true });
             continue;
           }
-          if (verdict.kind === 'auth' || verdict.reason === 'modelo no disponible') passing = false;
+          if (verdict.kind === 'auth' || verdict.reason === 'modelo no disponible' || (verdict.until && verdict.rest > 2 * MINUTE)) passing = false;
           if (verdict.kind === 'auth') for (const other of list.filter((item) => item.provider.name === entry.provider.name)) this.rest(other.key, verdict.rest);
           else this.rest(key, verdict.rest);
           failures.push(`${this.name(entry)}: ${verdict.reason ?? error.message}`);
@@ -117,7 +118,8 @@ export class Router {
         }
       }
     }
-    throw Object.assign(new Error(`ningun modelo respondio. ${failures.join(' · ')}`), { passing: passing && failures.length > 0, reason: failures.at(-1)?.split(': ').pop() ?? 'fallo' });
+    // Con un solo modelo (bichi-codex) el motivo va tal cual.
+    throw Object.assign(new Error(list.length === 1 && failures.length === 1 ? failures[0] : `ningun modelo respondio. ${failures.join(' · ')}`), { passing: passing && failures.length > 0, reason: failures.at(-1)?.split(': ').pop() ?? 'fallo' });
   }
 
   toolMode(entry) {
@@ -127,10 +129,10 @@ export class Router {
     return mode === 'auto' ? 'native' : mode;
   }
 
-  async once({ entry, mode, messages, tools, effort, cacheKey, signal, onDelta }) {
+  async once({ entry, mode, messages, tools, effort, cacheKey, onNotice, signal, onDelta }) {
     // API Responses (bichi-codex): su propio formato, su esfuerzo y la clave de cache de la conversacion.
     if (entry.provider.wire === 'responses') {
-      const result = await streamResponses({ provider: entry.provider, model: entry.id, messages, tools, effort: entry.effort ?? effort, cacheKey, signal, onDelta });
+      const result = await streamResponses({ provider: entry.provider, model: entry.id, messages, tools, effort: entry.effort ?? effort, cacheKey, signal, onDelta, onNotice });
       return { ...result, calls: result.calls.map((call) => ({ ...call, arguments: call.arguments || '{}' })), mode };
     }
     const dropped = new Set(this.state.dropped[entry.key] ?? []);

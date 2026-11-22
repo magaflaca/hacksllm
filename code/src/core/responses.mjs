@@ -3,6 +3,24 @@
 // razonamiento cifrado del modelo, que se guarda con el mensaje y se le devuelve en las siguientes peticiones para
 // que siga el hilo de lo que pensaba (como hace Codex, sin guardar nada en el servidor).
 import { ApiError, sse } from './client.mjs';
+import { untilLabel } from './retry.mjs';
+
+// Avisos de uso de la cuenta: al pasar del 80, 90 y 95% de cada ventana (5 h, semana), una vez por nivel.
+const STEPS = [95, 90, 80];
+const warned = new Map(); // ventana -> { level, resets }
+function checkLimits(headers, onNotice) {
+  for (const [kind, name] of [['primary', 'el limite de 5 h'], ['secondary', 'el limite semanal']]) {
+    const used = Number(headers.get(`x-codex-${kind}-used-percent`));
+    if (!Number.isFinite(used) || headers.get(`x-codex-${kind}-used-percent`) === null) continue;
+    const resets = Number(headers.get(`x-codex-${kind}-reset-at`)) * 1000 || null;
+    const last = warned.get(kind);
+    if (last && resets && last.resets !== resets) warned.delete(kind); // ventana nueva
+    const level = STEPS.find((step) => used >= step);
+    if (!level || (warned.get(kind)?.level ?? 0) >= level) continue;
+    warned.set(kind, { level, resets });
+    onNotice?.(`la cuenta de ChatGPT va por el ${Math.round(used)}% de ${name}${resets ? `; se renueva ${untilLabel(resets)}` : ''}`);
+  }
+}
 
 const userParts = (content) =>
   typeof content === 'string'
@@ -30,7 +48,7 @@ export function toResponses(messages) {
   return { instructions, input };
 }
 
-export async function streamResponses({ provider, model, messages, tools, effort, cacheKey, signal, onDelta = () => {} }) {
+export async function streamResponses({ provider, model, messages, tools, effort, cacheKey, signal, onDelta = () => {}, onNotice }) {
   const { instructions, input } = toResponses(messages);
   const body = {
     model,
@@ -52,13 +70,18 @@ export async function streamResponses({ provider, model, messages, tools, effort
   if (!response.ok) {
     const text = await response.text().catch(() => '');
     let message = text;
+    let until = null;
     try {
-      message = JSON.parse(text).error?.message ?? text;
+      const error = JSON.parse(text).error ?? {};
+      message = error.message ?? text;
+      until = error.until ?? null;
     } catch {
       /* no era json */
     }
-    throw new ApiError(response.status, message, provider.label);
+    // Con limite de uso, el error sabe hasta cuando (el router no reintenta y lo dice).
+    throw Object.assign(new ApiError(response.status, message, provider.label), until ? { until, plain: `${message}; vuelve ${untilLabel(until)}` } : {});
   }
+  checkLimits(response.headers, onNotice);
 
   let text = '';
   let reasoning = '';

@@ -14,3 +14,12 @@ export const sleep = (ms, signal) =>
 
 // Fallos que vale la pena reintentar: red caida, servidor ocupado o con problemas.
 export const transient = (status) => !status || status === 408 || status === 409 || status === 425 || status === 429 || status >= 500;
+
+// Hasta cuando hay que esperar, en la hora local: "a las 21:30 (en 2 h 5 min)".
+export function untilLabel(when) {
+  const left = Math.max(0, when - Date.now());
+  const minutes = Math.ceil(left / 60_000);
+  const span = minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h${minutes % 60 ? ` ${minutes % 60} min` : ''}`;
+  const day = new Date(when).toDateString() === new Date().toDateString() ? '' : ` del ${new Date(when).toLocaleDateString('es', { day: 'numeric', month: 'short' })}`;
+  return `a las ${new Date(when).toLocaleTimeString('es', { hour: 'numeric', minute: '2-digit' })}${day} (en ${span})`;
+}

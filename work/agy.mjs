@@ -14,7 +14,7 @@ import { randomBytes } from 'node:crypto';
 import { chmod, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { authorizer } from './auth.mjs';
-import { parseAgy, QUOTA } from './engines.mjs';
+import { parseAgy, QUOTA, waitFrom } from './engines.mjs';
 
 const PORT = Number(process.env.AGY_PORT ?? 20140);
 const GATEWAY = process.env.WORK_GATEWAY ?? 'http://127.0.0.1:20128';
@@ -488,26 +488,53 @@ async function runTurn(turn) {
   const pictures = await turn.images();
   const message = String(body.message ?? '').slice(0, LIMITS.prompt) + (pictures.length ? `\n\n[bichi] Imagenes que adjunto el usuario (miralas con tu herramienta para ver archivos antes de responder):\n${pictures.join('\n')}` : '');
   const resumes = typeof body.resume === 'object' && body.resume ? body.resume : {};
-  const order = MODELS.filter((entry) => !resting(entry.key));
-  if (!order.length) order.push(...MODELS);
-  for (const [index, entry] of order.entries()) {
-    if (turn.controller.signal.aborted) break;
-    if (index) turn.send({ t: 'status', text: 'cambiando de modelo…' });
+  const aborted = () => turn.controller.signal.aborted;
+  const attempt = (entry) => {
     const resume = /^[A-Za-z0-9_-]{1,80}$/.test(resumes[entry.key] ?? '') ? resumes[entry.key] : null;
     // En una conversacion retomada el preambulo ya esta; si pide publicar, se le recuerda como.
     const prompt = resume ? (/publica|bichi ?p[aá]gina/i.test(message) ? `${message}
 
 [bichi] ${PUBLISH}` : message) : preamble(body, folder) + message;
     turn.modelKey = entry.key;
-    const result = await runModel(turn, { model: entry.model(effort), resume, mode, folder, prompt });
-    if (result.ok) return { ok: true, text: result.final, model: entry.key, resume: { ...resumes, [entry.key]: result.conversation ?? resume } };
-    if (turn.controller.signal.aborted) break;
-    console.warn(`[agy] ${entry.key} fallo: ${result.reason.slice(0, 300)}`);
-    cooldown.set(entry.key, Date.now() + (result.quota ? 30 : 3) * 60_000);
-    // Una conversacion que ya no existe no se vuelve a intentar.
-    delete resumes[entry.key];
+    return runModel(turn, { model: entry.model(effort), resume, mode, folder, prompt }).then((result) => ({ ...result, resume }));
+  };
+  const done = (entry, result) => ({ ok: true, text: result.final, model: entry.key, resume: { ...resumes, [entry.key]: result.conversation ?? result.resume } });
+  // Sin cuota: descansa lo que diga el mensaje (o media hora si no lo dice).
+  const exhausted = (entry, result) => cooldown.set(entry.key, Date.now() + (waitFrom(result.reason) ?? 30 * 60_000));
+  const [main, backup] = MODELS;
+
+  // El modelo principal, con un reintento: un fallo suelto (red, un paso de agy) no cambia de modelo.
+  if (!resting(main.key)) {
+    for (let round = 0; round < 2 && !aborted(); round++) {
+      if (round) turn.send({ t: 'status', text: 'algo fallo; reintentando…' });
+      const result = await attempt(main);
+      if (result.ok) return done(main, result);
+      if (aborted()) break;
+      console.warn(`[agy] ${main.key} fallo: ${result.reason.slice(0, 300)}`);
+      if (result.quota) {
+        exhausted(main, result);
+        break;
+      }
+      if (round) return { ok: false, text: 'agy fallo dos veces seguidas con este mensaje; prueba otra vez o cambialo un poco', resume: resumes };
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
   }
-  return { ok: false, text: turn.controller.signal.aborted ? 'interrumpido' : 'agy no pudo con este turno ahora mismo; prueba en un rato o cambia de modelo', resume: resumes };
+
+  // Caso extremo: el principal sin cuota. Sigue el de respaldo avisando hasta cuando.
+  if (!aborted() && resting(main.key) && !resting(backup.key)) {
+    turn.send({ t: 'status', text: 'el modelo principal se quedo sin cuota; sigo con el de respaldo', until: cooldown.get(main.key) });
+    const result = await attempt(backup);
+    if (result.ok) return done(backup, result);
+    if (!aborted()) {
+      console.warn(`[agy] ${backup.key} fallo: ${result.reason.slice(0, 300)}`);
+      if (result.quota) exhausted(backup, result);
+      else return { ok: false, text: 'agy no pudo con este turno; prueba otra vez en un rato', resume: resumes };
+    }
+  }
+  if (aborted()) return { ok: false, text: 'interrumpido', resume: resumes };
+  // Todos sin cuota: se dice cuando vuelve el primero.
+  const until = Math.min(...MODELS.map((entry) => cooldown.get(entry.key) ?? Infinity));
+  return { ok: false, quota: true, until: Number.isFinite(until) ? until : null, text: 'agy se quedo sin cuota: la cuenta compartida llego a su limite', resume: resumes };
 }
 
 // ---- http

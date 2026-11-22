@@ -1,7 +1,8 @@
 // El modo codex dentro de la app: /codex entra y sale, y mientras esta activo /model y /effort eligen entre los
 // modelos de la cuenta de ChatGPT y sus niveles de esfuerzo (core/codex.mjs). El trabajo lo hace el agente de siempre.
 import { saveConfig } from './config.mjs';
-import { CODEX, codexEntry, codexModels, isCodex } from './core/codex.mjs';
+import { CODEX, codexEntry, codexModels, codexStatus, isCodex } from './core/codex.mjs';
+import { untilLabel } from './core/retry.mjs';
 import { notice } from './ui/blocks.mjs';
 import { c, dim } from './ui/term.mjs';
 
@@ -38,6 +39,17 @@ export async function setCodex(app, on) {
   app.router.current = entry(app);
   saveConfig(app.config);
   app.print(notice(`modo codex · ${entry(app).id} · esfuerzo ${levelName(codexEffort(app))} · /codex para volver`, c.ok));
+  const usage = await usageLine(app);
+  if (usage) app.print(notice(usage.text, usage.high ? c.warn : c.soft));
+}
+
+// Como va el uso de la cuenta (ventana de 5 h y semanal), si ya se sabe.
+async function usageLine(app) {
+  const limits = (await codexStatus(app.config).catch(() => null))?.limits;
+  if (!limits?.primary) return null;
+  const part = (window, name) => (window ? `${name} al ${Math.round(window.used)}%${window.used >= 80 && window.resets ? ` (se renueva ${untilLabel(window.resets * 1000)})` : ''}` : null);
+  const text = `uso de la cuenta: ${[part(limits.primary, '5 h'), part(limits.secondary, 'semana')].filter(Boolean).join(', ')}`;
+  return { text, high: Math.max(limits.primary.used, limits.secondary?.used ?? 0) >= 80 };
 }
 
 // /model en modo codex: los modelos de la cuenta (o volver a los de bichi).

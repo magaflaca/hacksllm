@@ -7,6 +7,20 @@ import { createInterface } from 'node:readline';
 const RUNNER = ['sudo', '-n', '/usr/local/bin/bichi-run'];
 export const QUOTA = /quota|exhaust|rate.?limit|429|resource_exhausted|capacity|too many/i;
 
+// Cuanto falta para que vuelva la cuota, si el mensaje lo dice ("reset after 2h17m46s", "retry in 41.2s",
+// "retry-after: 120", "resets in 3 hours"). Devuelve ms o null.
+export function waitFrom(text) {
+  const source = String(text ?? '');
+  const span = /(?:reset|retry|try again|available)\w*\s+(?:after|in)\s+((?:\d+(?:\.\d+)?\s*(?:h|hours?|m|min(?:utes?)?|s|sec(?:onds?)?)\s*,?\s*(?:and\s*)?)+)/i.exec(source);
+  if (span) {
+    let ms = 0;
+    for (const [, amount, unit] of span[1].matchAll(/(\d+(?:\.\d+)?)\s*(h|m|s)/gi)) ms += Number(amount) * { h: 3600_000, m: 60_000, s: 1000 }[unit.toLowerCase()];
+    if (ms) return ms;
+  }
+  const after = /retry-after\D{0,4}(\d+)/i.exec(source);
+  return after ? Number(after[1]) * 1000 : null;
+}
+
 const AGY_KINDS = [
   [/browser|url|web/, 'web'],
   [/write|create_file/, 'write'],
@@ -24,7 +38,10 @@ export function* parseAgy(event) {
   if (event.event === 'init') return yield { type: 'resume', id: event.conversation_id };
   if (event.event === 'result') {
     const { status, response } = event.result;
-    return yield status === 'SUCCESS' ? { type: 'final', text: response ?? '' } : { type: 'fail', message: `${status} ${response ?? ''}` };
+    // agy a veces cierra con ERROR aunque termino y contesto (un paso suyo fallo por el camino): si hay respuesta y
+    // no es de cuota, vale como final. Repetirlo con otro modelo haria el trabajo dos veces.
+    const usable = status === 'SUCCESS' || (String(response ?? '').trim() && !QUOTA.test(response));
+    return yield usable ? { type: 'final', text: response ?? '' } : { type: 'fail', message: `${status} ${response ?? ''}` };
   }
   if (event.event === 'error' || event.error) return yield { type: 'fail', message: JSON.stringify(event.error ?? event) };
   const step = event.step_update;
