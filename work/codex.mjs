@@ -185,6 +185,13 @@ function take(owner) {
 
 // ---- http
 
+// Nada de la cuenta (correo, nombre, ids) sale nunca de aqui: los textos que vienen de OpenAI se limpian.
+const scrub = (text) =>
+  String(text ?? '')
+    .replace(/[^\s@"'<>]+@[^\s@"'<>]+\.[^\s@"'<>]+/g, '(cuenta)')
+    .replace(/(user|account|org)-[A-Za-z0-9]{8,}/g, '(cuenta)')
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '(cuenta)');
+
 const send = (res, status, body) => {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body));
@@ -236,7 +243,7 @@ async function respond(req, res, owner) {
       }
       const after = Number(response.headers.get('retry-after'));
       until ??= after ? Date.now() + after * 1000 : null;
-      return send(res, response.status, { error: { message: String(message) || `error ${response.status}`, until } });
+      return send(res, response.status, { error: { message: scrub(message) || `error ${response.status}`, until } });
     }
     // Los porcentajes de uso de la cuenta viajan con la respuesta (bichi avisa cuando se acerca al limite).
     const usage = {};
@@ -278,7 +285,7 @@ const server = http.createServer(async (req, res) => {
     fail(res, 404, 'no existe');
   } catch (error) {
     if (error.name === 'AbortError') return res.destroy();
-    if (!res.headersSent) fail(res, error.status ?? 500, error.status ? error.message : `error interno: ${error.message}`);
+    if (!res.headersSent) fail(res, error.status ?? 500, scrub(error.status ? error.message : `error interno: ${error.message}`));
     else res.end();
   }
 });
