@@ -4,6 +4,7 @@ import { saveConfig } from './config.mjs';
 import { CODEX, codexEntry, codexModels, codexStatus, isCodex } from './core/codex.mjs';
 import { untilLabel } from './core/retry.mjs';
 import { notice } from './ui/blocks.mjs';
+import { card, gauge, keys } from './ui/cards.mjs';
 import { c, dim } from './ui/term.mjs';
 
 export const CODEX_HINT = 'los modelos de ChatGPT, con su propio esfuerzo';
@@ -18,38 +19,42 @@ const entry = (app) => codexEntry(app.config, app.state.codexModels?.list);
 export const codexLabel = (app) => `bichi-codex · ${entry(app).id}`;
 export const codexEffort = (app) => entry(app).effort;
 
-// Entrar o salir del modo. Al entrar se cargan los modelos de la cuenta (y se avisa si aun no hay cuenta).
+// Entrar o salir del modo. Al entrar se cargan los modelos de la cuenta y se ensena una tarjeta con el modelo, el
+// esfuerzo, como va el uso de la cuenta y los atajos.
 export async function setCodex(app, on) {
   if (!on) {
     app.config.model = 'auto';
     app.router.current = null;
     saveConfig(app.config);
-    return app.print(notice(`modelo: ${app.modelLabel()}`, c.ok));
+    return app.add((w) => card(c.sky, 'de vuelta a los modelos de bichi', [c.soft(app.modelLabel()), keys([['/codex', 'vuelve a codex']])], w));
   }
   let models;
   try {
     models = await codexModels(app);
   } catch (error) {
-    return app.print(notice(`bichi-codex no esta disponible: ${error.message}`, c.warn));
+    return app.add((w) => card(c.warn, 'bichi-codex no esta disponible', [c.soft(error.message)], w));
   }
-  if (!models.length) return app.print(notice('bichi-codex no esta disponible: la cuenta no tiene modelos', c.warn));
+  if (!models.length) return app.add((w) => card(c.warn, 'bichi-codex no esta disponible', [c.soft('la cuenta no tiene modelos')], w));
   app.config.model = CODEX;
   app.config.codex ??= {};
   if (!models.some((model) => model.id === app.config.codex.model)) app.config.codex.model = (models.find((model) => model.default) ?? models[0]).id;
   app.router.current = entry(app);
   saveConfig(app.config);
-  app.print(notice(`modo codex · ${entry(app).id} · esfuerzo ${levelName(codexEffort(app))} · /codex para volver`, c.ok));
-  const usage = await usageLine(app);
-  if (usage) app.print(notice(usage.text, usage.high ? c.warn : c.soft));
+  const limits = (await codexStatus(app.config).catch(() => null))?.limits;
+  app.add((w) =>
+    card(c.ok, 'modo codex', [
+      `${c.sky(entry(app).id)} ${c.soft('·')} ${c.soft(`esfuerzo ${levelName(codexEffort(app))}`)}`,
+      usageRow(limits),
+      keys([['/model', 'modelo'], ['/effort', 'esfuerzo'], ['/codex', 'volver']]),
+    ], w),
+  );
 }
 
-// Como va el uso de la cuenta (ventana de 5 h y semanal), si ya se sabe.
-async function usageLine(app) {
-  const limits = (await codexStatus(app.config).catch(() => null))?.limits;
+// Uso de la cuenta con medidores: "5 h ▰▱▱▱▱▱▱▱▱▱ 8%   semana ▱▱▱▱▱▱▱▱▱▱ 2%".
+function usageRow(limits) {
   if (!limits?.primary) return null;
-  const part = (window, name) => (window ? `${name} al ${Math.round(window.used)}%${window.used >= 80 && window.resets ? ` (se renueva ${untilLabel(window.resets * 1000)})` : ''}` : null);
-  const text = `uso de la cuenta: ${[part(limits.primary, '5 h'), part(limits.secondary, 'semana')].filter(Boolean).join(', ')}`;
-  return { text, high: Math.max(limits.primary.used, limits.secondary?.used ?? 0) >= 80 };
+  const part = (window, name) => (window ? `${c.soft(name)} ${gauge(window.used)}${window.used >= 80 && window.resets ? c.soft(` se renueva ${untilLabel(window.resets * 1000)}`) : ''}` : null);
+  return [part(limits.primary, '5 h'), part(limits.secondary, 'semana')].filter(Boolean).join('   ');
 }
 
 // /model en modo codex: los modelos de la cuenta (o volver a los de bichi).

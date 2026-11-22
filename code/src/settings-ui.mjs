@@ -80,6 +80,8 @@ export async function openConfig(app) {
         { label: () => `shell: ${c.sky(config.shell)}`, value: 'shell', onSide: (step) => ((config.shell = cycle(SHELLS, config.shell, step)), saveConfig(config)) },
         { label: () => `detalle (resultados completos): ${c.sky(config.verbose ? 'si' : 'no')}`, value: 'verbose', onSide: () => ((config.verbose = !config.verbose), saveConfig(config)) },
         { label: () => `actualizar solo: ${c.sky(config.autoUpdate !== false ? 'si' : 'no')}`, value: 'autoUpdate', onSide: () => ((config.autoUpdate = config.autoUpdate === false), saveConfig(config)) },
+        { label: () => `recap al terminar un turno largo: ${c.sky(config.recaps !== false ? 'si' : 'no')}`, value: 'recaps', onSide: () => ((config.recaps = config.recaps === false), saveConfig(config)) },
+        { label: () => `sugerir el siguiente mensaje: ${c.sky(config.suggestions !== false ? 'si' : 'no')}`, value: 'suggestions', onSide: () => ((config.suggestions = config.suggestions === false), saveConfig(config)) },
       ],
       escape: null,
     });
@@ -93,6 +95,8 @@ export async function openConfig(app) {
     else if (choice === 'shell') config.shell = cycle(SHELLS, config.shell);
     else if (choice === 'verbose') config.verbose = !config.verbose;
     else if (choice === 'autoUpdate') config.autoUpdate = config.autoUpdate === false;
+    else if (choice === 'recaps') config.recaps = config.recaps === false;
+    else if (choice === 'suggestions') config.suggestions = config.suggestions === false;
     saveConfig(config);
   }
 }

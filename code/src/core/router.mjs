@@ -78,6 +78,7 @@ export class Router {
     const queue = awake.length ? awake : [...list].sort((a, b) => (this.state.cooldowns[a.key] ?? 0) - (this.state.cooldowns[b.key] ?? 0)).slice(0, 1);
     const failures = [];
     let passing = true; // todos los fallos fueron pasajeros (no clave mala ni modelo inexistente)
+    let until = null; // si alguno dijo hasta cuando no tiene cuota
     for (let index = 0; index < queue.length; index++) {
       const entry = queue[index];
       let attempts = 0;
@@ -109,6 +110,7 @@ export class Router {
             continue;
           }
           if (verdict.kind === 'auth' || verdict.reason === 'modelo no disponible' || (verdict.until && verdict.rest > 2 * MINUTE)) passing = false;
+          if (verdict.until) until = Math.min(until ?? Infinity, verdict.until);
           if (verdict.kind === 'auth') for (const other of list.filter((item) => item.provider.name === entry.provider.name)) this.rest(other.key, verdict.rest);
           else this.rest(key, verdict.rest);
           failures.push(`${this.name(entry)}: ${verdict.reason ?? error.message}`);
@@ -119,7 +121,7 @@ export class Router {
       }
     }
     // Con un solo modelo (bichi-codex) el motivo va tal cual.
-    throw Object.assign(new Error(list.length === 1 && failures.length === 1 ? failures[0] : `ningun modelo respondio. ${failures.join(' · ')}`), { passing: passing && failures.length > 0, reason: failures.at(-1)?.split(': ').pop() ?? 'fallo' });
+    throw Object.assign(new Error(list.length === 1 && failures.length === 1 ? failures[0] : `ningun modelo respondio. ${failures.join(' · ')}`), { passing: passing && failures.length > 0, until, reason: failures.at(-1)?.split(': ').pop() ?? 'fallo' });
   }
 
   toolMode(entry) {

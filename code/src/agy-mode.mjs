@@ -13,7 +13,7 @@ import { startJob, tail } from './tools/jobs.mjs';
 import { detectShell, shell, shellEnv } from './tools/shell.mjs';
 import { saveConfig } from './config.mjs';
 import { untilLabel } from './core/retry.mjs';
-import { notice } from './ui/blocks.mjs';
+import { card, keys } from './ui/cards.mjs';
 import { c } from './ui/term.mjs';
 
 export const AGY_HINT = 'el mas capaz, ideal para proyectos grandes';
@@ -23,7 +23,11 @@ export function setAgy(app, on) {
   app.config.model = on ? 'agy' : 'auto';
   app.router.current = null;
   saveConfig(app.config);
-  app.print(notice(on ? 'modo agy · /agy para volver' : `modelo: ${app.modelLabel()}`, c.ok));
+  app.add((w) =>
+    on
+      ? card(c.ok, 'modo agy', [c.soft(AGY_HINT), keys([['/effort', 'esfuerzo'], ['/agy', 'volver']])], w)
+      : card(c.sky, 'de vuelta a los modelos de bichi', [c.soft(app.modelLabel()), keys([['/agy', 'vuelve a agy']])], w),
+  );
 }
 
 // Una conversacion sin carpeta de proyecto (bichi abierto en la carpeta de usuario o en la raiz del disco): se
@@ -245,7 +249,7 @@ export async function runAgy(app, content, images = []) {
     });
     app.session.agy = result.resume;
     // Sin cuota: se dice hasta cuando (en la hora de aqui).
-    if (!result.ok) throw new Error(result.until ? `${result.text}; vuelve ${untilLabel(result.until)}` : result.text);
+    if (!result.ok) throw Object.assign(new Error(result.until ? `${result.text}; vuelve ${untilLabel(result.until)}` : result.text), { until: result.until ?? null });
     if (!streamed.trim() && result.text) ui.onText?.(result.text);
     ui.onAssistantEnd?.({ text: result.text, calls: 0 });
     agent.messages.push({ role: 'assistant', content: result.text || streamed });

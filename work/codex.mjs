@@ -129,6 +129,18 @@ function remember(headers) {
   limits = { primary: window('primary'), secondary: read('secondary-used-percent') === null ? null : window('secondary'), at: Date.now() };
 }
 
+// Uso actual de la cuenta (como /status de Codex). Solo se quedan los porcentajes y cuando se renueva cada ventana:
+// esa respuesta trae tambien el correo y el id de la cuenta, que nunca salen de aqui.
+async function freshLimits() {
+  if (limits && Date.now() - limits.at < 60_000) return limits;
+  const response = await upstream('/usage', { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(20_000) }).catch(() => null);
+  const rate = response?.ok ? (await response.json().catch(() => null))?.rate_limit : null;
+  if (!rate?.primary_window) return limits;
+  const window = (w) => (w ? { used: Number(w.used_percent) || 0, minutes: Math.round((w.limit_window_seconds ?? 0) / 60), resets: w.reset_at ?? null } : null);
+  limits = { primary: window(rate.primary_window), secondary: window(rate.secondary_window), reached: !!rate.limit_reached, at: Date.now() };
+  return limits;
+}
+
 // ---- modelos
 
 let models = { list: null, at: 0 };
@@ -261,7 +273,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && action === 'models') return send(res, 200, { models: await listModels() });
     if (req.method === 'GET' && action === 'status') {
       const ready = !!(auth?.tokens?.access_token || (await loadAuth()));
-      return send(res, 200, { ready, plan: ready ? planOf(auth.tokens) : null, limits });
+      return send(res, 200, { ready, plan: ready ? planOf(auth.tokens) : null, limits: ready ? await freshLimits() : null });
     }
     fail(res, 404, 'no existe');
   } catch (error) {

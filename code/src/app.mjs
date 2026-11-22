@@ -15,6 +15,9 @@ import { ARG_HINTS, argChoices, COMMANDS, runCommand } from './commands.mjs';
 import { runAgy } from './agy-mode.mjs';
 import { isAgy } from './core/agy.mjs';
 import { codexEffort, codexLabel, isCodex, levelName } from './codex-mode.mjs';
+import { recapTurn } from './core/recap.mjs';
+import { untilLabel } from './core/retry.mjs';
+import { card, keys, recapLines } from './ui/cards.mjs';
 import { listFiles } from './tools/files.mjs';
 import { backgroundJobs, killAll, shell as shellTool, stopJob } from './tools/shell.mjs';
 import { beetle, logo } from './ui/art.mjs';
@@ -516,6 +519,8 @@ export class App {
     };
     const prompt = text.startsWith('!') ? c.warn('!') : text.startsWith('#') ? c.plum('#') : this.running ? c.soft('❯') : c.brand('❯');
     if (!text) {
+      // Sugerencia del siguiente mensaje (cuando la hay) en lugar del ejemplo de siempre; tab la usa.
+      if (!this.running && this.nextHint) return { lines: [`${prompt} ${dim(this.nextHint)}  ${c.soft('· tab para usarla')}`], cursor: { row: 0, col: 2 } };
       const placeholder = this.running ? 'escribe para redirigir a bichi sin parar el trabajo' : 'Prueba "explicame este proyecto" o "arregla los tests"';
       return { lines: [`${prompt} ${dim(placeholder)}`], cursor: { row: 0, col: 2 } };
     }
@@ -984,6 +989,11 @@ export class App {
         return this.render();
       }
     }
+    if (name === 'tab' && !editor.text && this.nextHint) {
+      editor.set(this.nextHint);
+      this.nextHint = null;
+      return this.render();
+    }
     if (name === 'enter') {
       if (key.meta || key.ctrl || key.shift) editor.insert('\n');
       else if (editor.text.slice(0, editor.cursor).endsWith('\\')) {
@@ -1127,6 +1137,11 @@ export class App {
 
   async send(text, { display = text } = {}) {
     this.follow = true;
+    this.nextHint = null;
+    // El recap es pasajero (como en Claude Code): se va al mandar el siguiente mensaje.
+    this.recapItem?.remove();
+    this.recapItem = null;
+    const serial = (this.turnSerial = (this.turnSerial ?? 0) + 1);
     if (!this.session.title && !display.startsWith('/')) this.session.title = display.replace(/\[Imagen #\d+\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
     const images = [...this.images].filter(([tag]) => text.includes(tag));
     // Si lo cancelas (esc) antes de que el modelo conteste o haga algo, el mensaje vuelve a la entrada como estaba.
@@ -1151,7 +1166,36 @@ export class App {
     });
     this.unsent = null;
     if (await this.leftovers(ended)) return;
+    if (!ended.interrupted) this.afterTurn(ended, index, serial);
     await this.pursueGoal();
+  }
+
+  // Sin cuota: que paso, hasta cuando y que hacer mientras (volver a los modelos de bichi, que siguen ahi).
+  limitCard(error, columns) {
+    const reason = error.message.replace(/^[\w-]+: /, '').replace(/; vuelve .*$/, '');
+    const back = isCodex(this.config.model) ? [['/codex', 'vuelve a los modelos de bichi mientras tanto']] : isAgy(this.config.model) ? [['/agy', 'vuelve a los modelos de bichi mientras tanto']] : [['/model', 'elige otro modelo']];
+    return card(c.warn, 'sin cuota por ahora', [c.soft(reason), `${c.soft('vuelve')} ${c.sky(untilLabel(error.until))}`, keys(back)], columns);
+  }
+
+  // Tras un turno: a veces, recap (si fue largo) y sugerencia del siguiente mensaje, con un modelo gratis. No espera:
+  // llega cuando llega y se descarta si mientras tanto empezo otro turno.
+  async afterTurn(ended, from, serial) {
+    const seconds = (Date.now() - ended.started) / 1000;
+    const steps = this.agent.messages.slice(from).reduce((count, message) => count + (message.tool_calls?.length ?? 0), 0);
+    const wantRecap = this.config.recaps !== false && (seconds >= 60 || steps >= 6) && Date.now() - (this.lastRecap ?? 0) > 4 * 60_000;
+    const wantNext = this.config.suggestions !== false && Math.random() < 0.6;
+    if (!wantRecap && !wantNext) return;
+    const result = await recapTurn(this.config, this.agent.messages, from);
+    if (!result || this.running || this.turnSerial !== serial) return;
+    if (wantRecap && result.recap) {
+      this.lastRecap = Date.now();
+      const first = !this.state.recapSeen;
+      this.state.recapSeen = true;
+      saveState(this.state);
+      this.recapItem = this.add((w) => recapLines(result.recap, w, first));
+    }
+    if (wantNext && result.next && !this.editor.text) this.nextHint = result.next;
+    this.render();
   }
 
   // Mensajes en cola que el turno no llego a leer (fallo o lo cortaste): nunca se pierden. Si lo interrumpiste vuelven
@@ -1242,7 +1286,8 @@ export class App {
           this.note('interrumpido · dime que hago distinto', c.warn);
           this.interruptedLast = true;
         }
-      } else {
+      } else if (error.until) this.add((w) => this.limitCard(error, w));
+      else {
         this.note(error.message, c.err);
         this.note('prueba otra vez, /model para elegir otro modelo o /config para tus claves');
       }
