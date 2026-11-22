@@ -9,12 +9,16 @@ const userParts = (content) =>
     ? [{ type: 'input_text', text: content }]
     : content.map((part) => (part.type === 'image_url' ? { type: 'input_image', image_url: part.image_url?.url ?? part.image_url } : { type: 'input_text', text: String(part.text ?? '') }));
 
+// Las instrucciones fijas son cortas: el prompt de sistema de bichi va como primer mensaje (de desarrollador) del
+// input, porque la cache de estos modelos solo cubre el input, no el campo instructions.
+const INSTRUCTIONS = 'Eres bichi, un agente de programacion. Sigue las instrucciones del mensaje de desarrollador.';
+
 // Historial de bichi -> { instructions, input }.
 export function toResponses(messages) {
-  let instructions = '';
+  const instructions = INSTRUCTIONS;
   const input = [];
   for (const message of messages) {
-    if (message.role === 'system') instructions += (instructions ? '\n\n' : '') + message.content;
+    if (message.role === 'system') input.push({ type: 'message', role: 'developer', content: [{ type: 'input_text', text: String(message.content) }] });
     else if (message.role === 'user') input.push({ type: 'message', role: 'user', content: userParts(message.content) });
     else if (message.role === 'tool') input.push({ type: 'function_call_output', call_id: message.tool_call_id, output: String(message.content ?? '') });
     else if (message.role === 'assistant') {
