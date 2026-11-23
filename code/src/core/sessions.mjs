@@ -45,6 +45,27 @@ export function listSessions(cwd = null) {
   return all.slice(0, KEEP);
 }
 
+// Una conversacion guardada a mitad de turno (ventana cerrada, cuelgue) puede tener llamadas a herramientas sin su
+// resultado; los modelos rechazan eso, asi que al retomarla cada llamada huerfana recibe un "(interrumpido)".
+function mend(session) {
+  const answered = new Set((session.messages ?? []).filter((message) => message.role === 'tool').map((message) => message.tool_call_id));
+  const out = [];
+  let missing = [];
+  const flush = () => {
+    out.push(...missing.map((call) => ({ role: 'tool', tool_call_id: call.id, name: call.function?.name, content: '(interrumpido: bichi se cerro antes de terminar)' })));
+    missing = [];
+  };
+  for (const message of session.messages ?? []) {
+    // Los resultados que si llegaron siguen a su llamada; los que faltan se ponen al acabar ese bloque.
+    if (message.role !== 'tool') flush();
+    out.push(message);
+    missing.push(...(message.tool_calls ?? []).filter((call) => !answered.has(call.id)));
+  }
+  flush();
+  session.messages = out;
+  return session;
+}
+
 export function loadSession(id) {
   if (!id || !existsSync(PROJECTS)) return null;
   for (const name of readdirSync(PROJECTS)) {
@@ -53,7 +74,7 @@ export function loadSession(id) {
     const file = existsSync(exact) ? exact : readdirSync(dir).map((entry) => path.join(dir, entry)).find((entry) => path.basename(entry).startsWith(id));
     if (file) {
       try {
-        return JSON.parse(readFileSync(file, 'utf8'));
+        return mend(JSON.parse(readFileSync(file, 'utf8')));
       } catch {
         return null;
       }

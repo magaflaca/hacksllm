@@ -129,8 +129,21 @@ export class App {
         this.thinking?.update();
         if (this.tick % 2 === 0) this.setTitle();
         this.schedule();
+        // Durante un turno largo la conversacion se va guardando (cada mensaje nuevo, como mucho cada 3 s), asi no
+        // se pierde aunque se cierre la ventana o se cuelgue algo antes de terminar.
+        if (this.tick % 33 === 0 && this.agent.messages.length !== this.savedCount) this.saveSession();
       }
     }, 90);
+    // Cerrar la ventana con la X (SIGHUP en Windows) o matar el proceso: se guarda antes de irse.
+    for (const signal of ['SIGHUP', 'SIGTERM', 'SIGBREAK']) {
+      process.on(signal, () => {
+        try {
+          this.saveSession();
+        } finally {
+          process.exit(0);
+        }
+      });
+    }
     this.header();
     this.render();
   }
@@ -238,6 +251,7 @@ export class App {
     this.session.messages = this.agent.messages;
     this.session.todos = this.agent.todos;
     this.session.model = this.config.model;
+    this.savedCount = this.agent.messages.length;
     saveSession(this.session);
   }
 
