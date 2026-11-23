@@ -103,17 +103,34 @@ export const shell = {
 
     const seconds = Math.min(600, Math.max(1, Number(input.timeout) || 120));
     let timedOut = false;
+    let finish;
     const timer = setTimeout(() => {
       timedOut = true;
       killTree(child);
+      finish?.(null);
     }, seconds * 1000);
-    const onAbort = () => killTree(child);
+    const onAbort = () => {
+      killTree(child);
+      finish?.(null);
+    };
     ctx.signal?.addEventListener('abort', onAbort, { once: true });
+    // 'close' espera a que se cierren las tuberias, y un proceso que el comando dejo abierto (Word, un servidor,
+    // algo lanzado con start) las hereda y las mantiene vivas para siempre. Por eso, cuando el shell ya salio, se
+    // esperan como mucho 2 s mas a la salida; y al cortar o interrumpir no se espera a nadie.
     const code = await new Promise((resolve) => {
-      child.on('close', (exit) => resolve(exit));
+      let done = false;
+      finish = (exit) => {
+        if (done) return;
+        done = true;
+        child.stdout.destroy();
+        child.stderr.destroy();
+        resolve(exit ?? child.exitCode ?? -1);
+      };
+      child.on('close', (exit) => finish(exit));
+      child.on('exit', (exit) => setTimeout(() => finish(exit), 2000).unref());
       child.on('error', (error) => {
         output += `\n${error.message}`;
-        resolve(-1);
+        finish(-1);
       });
     });
     clearTimeout(timer);
