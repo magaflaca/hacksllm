@@ -24,8 +24,8 @@ const ORIGINATOR = 'codex_cli_rs';
 
 const LIMITS = {
   body: 48 << 20, // una peticion (el historial con sus imagenes)
-  perOwner: 3, // respuestas a la vez por usuario
-  total: 8, // respuestas a la vez en total
+  perOwner: 6, // respuestas a la vez por usuario
+  total: 12, // respuestas a la vez en total
   idle: 300_000, // sin datos del modelo en este tiempo, se corta
 };
 // Lo que bichi puede mandar a la API; lo demas se descarta.

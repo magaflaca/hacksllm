@@ -1467,15 +1467,22 @@ export class App {
 
   // ---------- dialogos ----------
 
-  async overlayRun(widget) {
-    this.overlay = widget;
-    this.render();
-    try {
-      return await widget.promise;
-    } finally {
-      this.overlay = null;
+  // Un dialogo cada vez: si otro pide algo mientras hay uno abierto (dos subagentes pidiendo permiso a la vez), espera
+  // su turno. Antes el segundo tapaba al primero, que se quedaba sin respuesta y dejaba colgado a su agente.
+  overlayRun(widget) {
+    const run = async () => {
+      this.overlay = widget;
       this.render();
-    }
+      try {
+        return await widget.promise;
+      } finally {
+        this.overlay = null;
+        this.render();
+      }
+    };
+    const turn = (this.overlayChain ?? Promise.resolve()).then(run, run);
+    this.overlayChain = turn.catch(() => {});
+    return turn;
   }
 
   choose(spec) {
